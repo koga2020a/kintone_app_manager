@@ -1,0 +1,17 @@
+output/
+venv/
+log/
+
+.kintone.env
+
+old_*
+
+*.csv
+*.tsv
+*.xlsx
+*.txt
+*.log
+*.json
+*.yaml
+*.yml
+*.ini
