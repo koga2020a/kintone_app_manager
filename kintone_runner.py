@@ -29,6 +29,46 @@ USER_GROUP_DIR = SCRIPT_DIR / "kintone_get_user_group"
 APPJSON_DIR = SCRIPT_DIR / "kintone_get_appjson"
 GROUP_CLI_DIR = SCRIPT_DIR / "kintone_group_cli"
 
+# 出力ファイル情報定義
+OUTPUT_FILE_INFO = {
+    "excel": [
+        {
+            "name": "kintone_users_groups_[日時].xlsx",
+            "description": "ユーザーとグループの一覧情報",
+            "command": "users",
+            "args": "--format excel (デフォルト)"
+        },
+        {
+            "name": "acl_report_[アプリID]_[日時].xlsx",
+            "description": "アプリのACL情報（ユーザー名・グループ名を反映）",
+            "command": "acl",
+            "args": "--id [アプリID] (省略時は全アプリ対象)"
+        }
+    ],
+    "csv": [
+        {
+            "name": "kintone_users_groups_[日時].csv",
+            "description": "ユーザーとグループの一覧情報（CSV形式）",
+            "command": "users",
+            "args": "--format csv"
+        },
+        {
+            "name": "[アプリID]permission_target_user_names.csv",
+            "description": "アプリに出現するユニークなユーザー名一覧",
+            "command": "acl",
+            "args": "--id [アプリID] (自動生成される補助ファイル)"
+        }
+    ],
+    "tsv": [
+        {
+            "name": "(現在TSV形式の出力はサポートされていません)",
+            "description": "",
+            "command": "",
+            "args": ""
+        }
+    ]
+}
+
 # ログ設定
 def setup_logging():
     """ロギングの設定"""
@@ -93,6 +133,29 @@ def create_config_file(config, config_path=None):
     except Exception as e:
         print(f"エラー: config_UserAccount.yaml の作成中にエラーが発生しました: {e}")
         return False
+
+# 出力ファイル情報の表示
+def display_output_info():
+    """
+    生成されるExcel、CSV、TSVファイルの情報を表示
+    """
+    print("=== Kintone Runner が生成するファイル一覧 ===")
+    print("※ JSON、YAMLファイルは除く\n")
+    
+    for file_type, files in OUTPUT_FILE_INFO.items():
+        print(f"【{file_type.upper()}ファイル】")
+        for file_info in files:
+            if file_info["name"] and file_info["command"]:
+                print(f"■ {file_info['name']}")
+                print(f"  内容: {file_info['description']}")
+                print(f"  コマンド: {file_info['command']} {file_info['args']}")
+                print()
+            else:
+                print(f"■ {file_info['name']}")
+                print()
+    
+    print("※ すべてのファイルは 'all' コマンドでも一括生成できます。")
+    print("※ 出力先ディレクトリ: ./output/")
 
 # ユーザーとグループ情報の取得
 def get_user_group_info(config, logger, output_format="excel"):
@@ -278,6 +341,95 @@ def manage_groups(config, logger, action, params=None):
             
         return False
 
+# ACLをExcelに変換
+def generate_acl_excel(config, logger, app_id=None):
+    """
+    kintone_get_appjson の aclJson_to_excel.py を使用してACL情報をExcelに変換する
+    
+    Args:
+        config (dict): 設定情報
+        logger (Logger): ロガーオブジェクト
+        app_id (int, optional): アプリID
+    
+    Returns:
+        str: 生成されたExcelファイルのパス、または失敗した場合はFalse
+    """
+    logger.info("ACL情報のExcel変換を開始します")
+    
+    script_path = APPJSON_DIR / "aclJson_to_excel.py"
+    
+    if not script_path.exists():
+        logger.error(f"スクリプトファイルが見つかりません: {script_path}")
+        return False
+    
+    # 出力ディレクトリが存在しない場合は作成
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    
+    # app_tokensからアプリIDとAPIトークンを取得
+    app_tokens = config.get('app_tokens', {})
+    
+    if app_id:
+        # 特定のアプリIDが指定された場合
+        if str(app_id) not in app_tokens:
+            logger.error(f"アプリID {app_id} のAPIトークンが設定されていません")
+            return False
+            
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = OUTPUT_DIR / f"acl_report_{app_id}_{timestamp}.xlsx"
+        
+        cmd = [
+            sys.executable,
+            str(script_path),
+            str(app_id),
+            "--output", str(output_file)
+        ]
+        
+        try:
+            logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            logger.info(f"アプリID {app_id} のACL情報を {output_file} に出力しました")
+            logger.debug(f"出力: {result.stdout}")
+            return str(output_file)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"ACL情報のExcel変換中にエラーが発生しました: {e}")
+            logger.error(f"標準出力: {e.stdout}")
+            logger.error(f"標準エラー: {e.stderr}")
+            return False
+    else:
+        # 全てのアプリを処理
+        success = True
+        generated_files = []
+        
+        for app_id in app_tokens.keys():
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = OUTPUT_DIR / f"acl_report_{app_id}_{timestamp}.xlsx"
+            
+            cmd = [
+                sys.executable,
+                str(script_path),
+                str(app_id),
+                "--output", str(output_file)
+            ]
+            
+            try:
+                logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                logger.info(f"アプリID {app_id} のACL情報を {output_file} に出力しました")
+                logger.debug(f"出力: {result.stdout}")
+                generated_files.append(str(output_file))
+            except subprocess.CalledProcessError as e:
+                logger.error(f"アプリID {app_id} のACL情報のExcel変換中にエラーが発生しました: {e}")
+                logger.error(f"標準出力: {e.stdout}")
+                logger.error(f"標準エラー: {e.stderr}")
+                success = False
+        
+        if success and generated_files:
+            return generated_files
+        elif generated_files:
+            return generated_files
+        else:
+            return False
+
 def main():
     """メイン関数"""
     # コマンドライン引数の解析
@@ -285,22 +437,26 @@ def main():
     subparsers = parser.add_subparsers(dest='command', help='実行するコマンド')
     
     # ユーザーグループ取得コマンド
-    user_group_parser = subparsers.add_parser('users', help='ユーザーとグループ情報を取得')
+    user_group_parser = subparsers.add_parser('users', help='ユーザーとグループ情報を取得（出力: kintone_users_groups_[日時].xlsx）')
     user_group_parser.add_argument('--format', choices=['excel', 'csv'], default='excel', help='出力形式')
     
     # アプリJSON取得コマンド
-    app_json_parser = subparsers.add_parser('app', help='アプリのJSONデータを取得')
+    app_json_parser = subparsers.add_parser('app', help='アプリのJSONデータを取得（出力: [アプリID]_app_settings.json, [アプリID]_form_layout.json など）')
     app_json_parser.add_argument('--id', type=int, help='取得するアプリID')
+    
+    # ACL Excel生成コマンド
+    acl_excel_parser = subparsers.add_parser('acl', help='アプリのACL情報をExcelに変換（出力: acl_report_[アプリID]_[日時].xlsx）')
+    acl_excel_parser.add_argument('--id', type=int, help='変換するアプリID')
     
     # グループ操作コマンド
     group_parser = subparsers.add_parser('group', help='グループ操作')
     group_subparsers = group_parser.add_subparsers(dest='action', help='実行するアクション')
     
     # グループ一覧
-    group_subparsers.add_parser('list', help='グループ一覧を表示')
+    group_subparsers.add_parser('list', help='グループ一覧を表示（コンソール出力）')
     
     # ユーザー検索
-    search_parser = group_subparsers.add_parser('search', help='ユーザーを検索')
+    search_parser = group_subparsers.add_parser('search', help='ユーザーを検索（コンソール出力）')
     search_parser.add_argument('keyword', help='検索キーワード')
     
     # ユーザーをグループに追加
@@ -313,12 +469,27 @@ def main():
     remove_parser.add_argument('user', help='ユーザーコード')
     
     # 全機能実行コマンド
-    subparsers.add_parser('all', help='すべての機能を順番に実行')
+    subparsers.add_parser('all', help='すべての機能を順番に実行（複数の出力ファイルが生成されます）')
+    
+    # 出力ファイル一覧表示コマンド
+    subparsers.add_parser('outputs', help='生成されるExcel/CSV/TSVファイルの一覧と概要を表示')
     
     # 環境ファイルオプション
     parser.add_argument('--env', type=str, help='.kintone.env ファイルのパス')
     
+    # 引数がない場合はヘルプと出力ファイル情報を表示
+    if len(sys.argv) == 1:
+        parser.print_help()
+        print("\n")
+        display_output_info()
+        sys.exit(0)
+    
     args = parser.parse_args()
+    
+    # 出力ファイル一覧表示の場合
+    if args.command == 'outputs':
+        display_output_info()
+        sys.exit(0)
     
     # ロギングの設定
     logger = setup_logging()
@@ -339,6 +510,16 @@ def main():
         result = get_app_json(config, logger, args.id)
         if result:
             print("アプリのJSONデータ取得が完了しました")
+            
+    elif args.command == 'acl':
+        result = generate_acl_excel(config, logger, args.id)
+        if result:
+            if isinstance(result, list):
+                print("以下のファイルにACL情報を出力しました:")
+                for file in result:
+                    print(f"- {file}")
+            else:
+                print(f"ACL情報を {result} に出力しました")
             
     elif args.command == 'group':
         if args.action == 'list':
@@ -375,14 +556,21 @@ def main():
         if app_result:
             print("アプリのJSONデータ取得が完了しました")
         
-        # 3. グループ一覧の表示
+        # 3. ACL情報のExcel変換
+        acl_result = generate_acl_excel(config, logger)
+        if acl_result:
+            if isinstance(acl_result, list):
+                print("以下のファイルにACL情報を出力しました:")
+                for file in acl_result:
+                    print(f"- {file}")
+            else:
+                print(f"ACL情報を {acl_result} に出力しました")
+        
+        # 4. グループ一覧の表示
         group_result = manage_groups(config, logger, 'list')
         if group_result:
             print("グループ一覧:")
             print(group_result)
-    
-    else:
-        parser.print_help()
     
     logger.info("KintoneRunnerを終了します")
 
