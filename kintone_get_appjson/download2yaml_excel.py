@@ -871,7 +871,8 @@ def export_all_records(appid, api_token, base_dir, subdomain):
         # データ行の処理
         for row_idx, row in enumerate(tsv_reader, 2):
           for col_idx, value in enumerate(row, 1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=str(value))
+            value = str(value).replace('\n', '\\n').replace('\t', '\\t')
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
             cell.number_format = '@'  # 文字列型として設定
 
       # 列幅の自動調整（最大50文字まで）
