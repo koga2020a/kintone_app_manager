@@ -850,8 +850,45 @@ def export_all_records(appid, api_token, base_dir, subdomain):
             row[field] = value
           writer.writerow(row)
       print(f"全レコードをTSV形式で {tsv_file} にエクスポートしました。")
+
+      # TSVからExcelファイルを作成
+      excel_file = Path(base_dir) / f"{appid}_records.xlsx"
+      wb = Workbook()
+      ws = wb.active
+
+      # TSVファイルを読み込む
+      with open(tsv_file, 'r', encoding='utf-8') as f:
+        tsv_reader = csv.reader(f, delimiter='\t')
+        
+        # ヘッダー行のスタイル設定
+        header = next(tsv_reader)
+        for col, value in enumerate(header, 1):
+          cell = ws.cell(row=1, column=col, value=value)
+          cell.fill = PatternFill(start_color='B8CCE4', end_color='B8CCE4', fill_type='solid')
+          cell.alignment = Alignment(horizontal='center', vertical='center')
+          cell.font = Font(bold=True)
+        
+        # データ行の処理
+        for row_idx, row in enumerate(tsv_reader, 2):
+          for col_idx, value in enumerate(row, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=str(value))
+            cell.number_format = '@'  # 文字列型として設定
+
+      # 列幅の自動調整（最大50文字まで）
+      for column in ws.columns:
+        max_length = 0
+        column_letter = get_column_letter(column[0].column)
+        for cell in column:
+          if cell.value:
+            max_length = max(max_length, len(str(cell.value)))
+        adjusted_width = min(max_length + 2, 50)
+        ws.column_dimensions[column_letter].width = adjusted_width
+
+      wb.save(excel_file)
+      print(f"全レコードをExcel形式で {excel_file} にエクスポートしました。")
+
     except IOError as e:
-      print(f"TSVファイルの保存中にエラーが発生しました: {e}")
+      print(f"ファイルの保存中にエラーが発生しました: {e}")
       sys.exit(1)
   else:
     print("エクスポートするレコードが見つかりませんでした。")
