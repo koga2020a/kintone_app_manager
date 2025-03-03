@@ -1114,6 +1114,7 @@ def main():
   parser.add_argument('--log-level', type=str, choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                      default='INFO', help='ログレベル (デフォルト: INFO)')
   parser.add_argument('--silent', action='store_true', help='ログ出力を抑制する')
+  parser.add_argument('--output', '-o', type=str, help='出力するExcelファイルのパス')
 
   args = parser.parse_args()
 
@@ -1270,8 +1271,13 @@ def main():
   compare_permissions_and_mark(wb, group_map, group_members, header_name, base_dir)
 
   # ファイルを保存
-  output_file = os.path.join(base_dir, f"{header_name}_acl.xlsx")
+  output_file = args.output if args.output else os.path.join(base_dir, f"{header_name}_acl.xlsx")
   try:
+      # 出力ディレクトリが存在しない場合は作成
+      output_dir = os.path.dirname(output_file)
+      if output_dir:
+          os.makedirs(output_dir, exist_ok=True)
+      
       wb.save(output_file)
       logging.info(f'変換完了: {output_file}')
   except PermissionError:
