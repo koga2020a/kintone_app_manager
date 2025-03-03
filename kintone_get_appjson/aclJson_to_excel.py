@@ -10,7 +10,10 @@ import csv
 import logging
 from collections import Counter
 
-
+# 縦書きの定数を定義
+VERTICAL_TEXT_JAPANESE = 255  # 日本語の縦書き
+VERTICAL_TEXT_LEFT_TO_RIGHT = 90  # 左から右への縦書き
+VERTICAL_TEXT_RIGHT_TO_LEFT = 180  # 右から左への縦書き
 
 def setup_logging(log_level, silent=False):
     """
@@ -516,7 +519,7 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
                            rotation=True, background_color=background_color)
           # 2行目のF列以降を180度回転に設定
           if current_col >= 6:
-              ws.cell(row=current_row + 1, column=current_col).alignment = Alignment(textRotation=180, horizontal='center', vertical='center', wrap_text=True)
+              ws.cell(row=current_row + 1, column=current_col).alignment = Alignment(textRotation=VERTICAL_TEXT_JAPANESE, horizontal='center', vertical='center', wrap_text=True)
           current_col += 1
 
     # 重複を除いた単純なユーザ名一覧の取得
@@ -545,7 +548,7 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
       # 個別ユーザー名（3行目は90度回転）
       for user_name in sorted(permission_target_user_names):
           create_header_cell(ws, current_row + 1, current_col, user_name, 
-                           rotation=90, background_color='CC7777')
+                           rotation=VERTICAL_TEXT_LEFT_TO_RIGHT, background_color='CC7777')
           current_col += 1
 
     # データ行の書き込み
@@ -679,7 +682,7 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
                     if entity_name == display_name:
                         f_cell = ws.cell(row=current_row, column=col, value=permissions)
                         # F列以降のセルを90度右回転に設定
-                        f_cell.alignment = Alignment(textRotation=255, horizontal='center', vertical='center', wrap_text=True)
+                        f_cell.alignment = Alignment(textRotation=VERTICAL_TEXT_JAPANESE, horizontal='center', vertical='center', wrap_text=True)
                 col += 1
           
           # 無効なエンティティの場合のみ赤字で表示
@@ -734,7 +737,7 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
                     
                     # 4行目以降のセルを90度右回転に設定
                     if current_row >= 4:
-                        cell.alignment = Alignment(textRotation=255, horizontal='center', vertical='center', wrap_text=True)
+                        cell.alignment = Alignment(textRotation=VERTICAL_TEXT_JAPANESE, horizontal='center', vertical='center', wrap_text=True)
                     
                     # 同じ権限ブロック内で以前の権限と比較
                     block_number = ws.cell(row=current_block_start, column=1).value
