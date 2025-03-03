@@ -871,7 +871,13 @@ def export_all_records(appid, api_token, base_dir, subdomain):
         # データ行の処理
         for row_idx, row in enumerate(tsv_reader, 2):
           for col_idx, value in enumerate(row, 1):
-            value = str(value).replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+            # 制御文字と特殊文字を処理
+            value = str(value).replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+            # 連続する空白を1つにまとめる
+            value = ' '.join(value.split())
+            # Excelで使用できない文字を除去
+            value = ''.join(char for char in value if ord(char) >= 32)
+            
             cell = ws.cell(row=row_idx, column=col_idx, value=value)
             cell.number_format = '@'  # 文字列型として設定
 
