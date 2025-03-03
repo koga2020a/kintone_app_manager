@@ -401,7 +401,7 @@ def create_header_cell(ws, row, col, value, rotation=False, merge_cells=None,
   vertical_value = 'center' if tate_center else 'top'
   align_params = {'wrap_text': True, 'vertical': vertical_value}
   if rotation:
-    align_params['textRotation'] = 90 # 縦書き
+    align_params['textRotation'] = 180 # 縦書き
     align_params['horizontal'] = 'center' # 縦書き時の中央揃え
   else:
     align_params['horizontal'] = 'center' # その他のセルは中央揃え
@@ -502,13 +502,21 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
         }.get(entity_type, entity_type)
         
         # タイプヘッダー
+        background_color = 'E6E6FA' if type_label == 'フィールド' else 'D9D9D9'
         create_header_cell(ws, current_row, current_col, type_label,
-                         merge_cells=(current_row, current_row, current_col, current_col + len(codes) - 1))
+                         merge_cells=(current_row, current_row, current_col, current_col + len(codes) - 1),
+                         background_color=background_color)
         
         # 個別エンティティ名
         for code in codes:
-          display_name = group_map.get(code, code)  # 'name' フィールドを取得せず、直接グループ名を取得
-          create_header_cell(ws, current_row + 1, current_col, display_name, rotation=True)
+          display_name = group_map.get(code, code)
+          # フィールドの場合は薄い紫色の背景
+          background_color = 'E6E6FA' if type_label == 'フィールド' else 'D9D9D9'
+          create_header_cell(ws, current_row + 1, current_col, display_name, 
+                           rotation=True, background_color=background_color)
+          # 2行目のF列以降を180度回転に設定
+          if current_col >= 6:
+              ws.cell(row=current_row + 1, column=current_col).alignment = Alignment(textRotation=180, horizontal='center', vertical='center', wrap_text=True)
           current_col += 1
 
     # 重複を除いた単純なユーザ名一覧の取得
@@ -531,12 +539,14 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
     if permission_target_user_names:
       # ユーザー名ヘッダー
       create_header_cell(ws, current_row, current_col, '個別ユーザー権限',
-                       merge_cells=(current_row, current_row, current_col, current_col + len(permission_target_user_names) - 1), background_color='CC7777')
+                       merge_cells=(current_row, current_row, current_col, current_col + len(permission_target_user_names) - 1), 
+                       background_color='CC7777')
       
-      # 個別ユーザー名
+      # 個別ユーザー名（3行目は90度回転）
       for user_name in sorted(permission_target_user_names):
-        create_header_cell(ws, current_row + 1, current_col, user_name, rotation=True, background_color='CC7777')
-        current_col += 1
+          create_header_cell(ws, current_row + 1, current_col, user_name, 
+                           rotation=90, background_color='CC7777')
+          current_col += 1
 
     # データ行の書き込み
     data_row = current_row + 2
@@ -576,6 +586,10 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
             top=Side(style='thick'),
             bottom=current_border.bottom
           )
+          
+          # 4行目以降のD列とF列以降のセルを90度右回転に設定
+          if col == 4 or col >= 6:
+            cell.alignment = Alignment(textRotation=255, horizontal='center', vertical='center', wrap_text=True)
         
         # 枠の左端と右端
         for row in range(start_row, start_row + num_entities):
@@ -597,6 +611,17 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
             top=current_border.top,
             bottom=current_border.bottom
           )
+          
+          # 4行目以降のD列とF列以降のセルを90度右回転に設定
+          if row >= 4:
+            # D列の設定
+            d_cell = ws.cell(row=row, column=4)
+            d_cell.alignment = Alignment(textRotation=255, horizontal='center', vertical='center', wrap_text=True)
+            
+            # F列以降の設定
+            for col in range(6, max_col + 1):
+              f_cell = ws.cell(row=row, column=col)
+              f_cell.alignment = Alignment(textRotation=255, horizontal='center', vertical='center', wrap_text=True)
         
         # 枠の下端
         for col in range(1, max_col + 1):
@@ -626,8 +651,12 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
           cell = ws.cell(row=current_entity_row, column=3, value=entity_info['name'])
           
           # D列に権限を表示（括弧なし）
-          permissions_str = '/'.join(entity_info['permissions'])
-          ws.cell(row=current_entity_row, column=4, value=permissions_str)
+          permissions_str = '･'.join(entity_info['permissions'])
+          d_cell = ws.cell(row=current_entity_row, column=4, value=permissions_str)
+          
+          # 4行目以降のD列を90度右回転に設定
+          if current_entity_row >= 4:
+            d_cell.alignment = Alignment(textRotation=255, horizontal='center', vertical='center', wrap_text=True)
           
           # E列に計算式を設定（4行目以降）- D列を参照するように変更
           if current_entity_row >= 4:
@@ -648,7 +677,9 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
                     
                     # C列の値とエンティティの表示名が一致する場合、権限を転記
                     if entity_name == display_name:
-                        ws.cell(row=current_row, column=col, value=permissions)
+                        f_cell = ws.cell(row=current_row, column=col, value=permissions)
+                        # F列以降のセルを90度右回転に設定
+                        f_cell.alignment = Alignment(textRotation=255, horizontal='center', vertical='center', wrap_text=True)
                 col += 1
           
           # 無効なエンティティの場合のみ赤字で表示
@@ -700,6 +731,10 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
 
                 if user_permission:
                     cell = ws.cell(row=current_row, column=col, value=user_permission)
+                    
+                    # 4行目以降のセルを90度右回転に設定
+                    if current_row >= 4:
+                        cell.alignment = Alignment(textRotation=255, horizontal='center', vertical='center', wrap_text=True)
                     
                     # 同じ権限ブロック内で以前の権限と比較
                     block_number = ws.cell(row=current_block_start, column=1).value
@@ -1010,7 +1045,7 @@ def compare_permissions_and_mark(wb, group_map, group_members, header_name, base
             app_perms = user_effective_permissions.get(group_name, everyone_permissions)
 
         # レコードシートの権限をパース
-        record_permissions = set(filter(None, map(str.strip, record_perm_str.strip('/').split('/'))))
+        record_permissions = set(filter(None, map(str.strip, record_perm_str.strip('･').split('･'))))
         extra_permissions = record_permissions - app_perms
 
         if extra_permissions:
@@ -1040,7 +1075,7 @@ def compare_permissions_and_mark(wb, group_map, group_members, header_name, base
           for (entity_type, group_name, record_perms, app_perms), extra_perms in warnings_collection.items():
               count = warnings_counter[(entity_type, group_name, record_perms, app_perms)]
               # 過剰な権限を文字列に変換
-              extra_perms_str = '/'.join(sorted(extra_perms))
+              extra_perms_str = '･'.join(sorted(extra_perms))
               writer.writerow([
                   header_name,
                   entity_type,
