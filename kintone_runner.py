@@ -341,6 +341,20 @@ def manage_groups(config, logger, action, params=None):
             
         return False
 
+# 既存のディレクトリを探す関数
+def find_existing_directory(base_dir, app_id):
+    """
+    指定されたディレクトリ内で、特定のアプリIDで始まるディレクトリを探す
+
+    Args:
+        base_dir (Path): 検索を行う基準ディレクトリ
+        app_id (str): 探索するディレクトリ名のアプリID
+
+    Returns:
+        Path: 見つかったディレクトリのパス、見つからない場合はNone
+    """
+    return next((d for d in base_dir.iterdir() if d.is_dir() and d.name.startswith(f"{app_id}_")), None)
+
 # ACLをExcelに変換
 def generate_acl_excel(config, logger, app_id=None):
     """
@@ -362,9 +376,6 @@ def generate_acl_excel(config, logger, app_id=None):
         logger.error(f"スクリプトファイルが見つかりません: {script_path}")
         return False
     
-    # 出力ディレクトリが存在しない場合は作成
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    
     # app_tokensからアプリIDとAPIトークンを取得
     app_tokens = config.get('app_tokens', {})
     
@@ -374,8 +385,14 @@ def generate_acl_excel(config, logger, app_id=None):
             logger.error(f"アプリID {app_id} のAPIトークンが設定されていません")
             return False
             
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = OUTPUT_DIR / f"acl_report_{app_id}_{timestamp}.xlsx"
+        # [app_id]_ で始まるディレクトリを探す
+        output_dir = find_existing_directory(OUTPUT_DIR, str(app_id))
+        
+        if not output_dir:
+            logger.error(f"アプリID {app_id} に対応するディレクトリが見つかりません")
+            return False
+        
+        output_file = output_dir / f"{app_id}_acl_report.xlsx"
         
         cmd = [
             sys.executable,
@@ -401,8 +418,15 @@ def generate_acl_excel(config, logger, app_id=None):
         generated_files = []
         
         for app_id in app_tokens.keys():
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_file = OUTPUT_DIR / f"acl_report_{app_id}_{timestamp}.xlsx"
+            # [app_id]_ で始まるディレクトリを探す
+            output_dir = find_existing_directory(OUTPUT_DIR, str(app_id))
+            
+            if not output_dir:
+                logger.error(f"アプリID {app_id} に対応するディレクトリが見つかりません")
+                success = False
+                continue
+            
+            output_file = output_dir / f"{app_id}_acl_report.xlsx"
             
             cmd = [
                 sys.executable,
