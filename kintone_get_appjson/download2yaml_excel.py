@@ -65,32 +65,10 @@ def create_directory_structure(appid, app_name):
 
   # 出力先フォルダを作成（存在しない場合）
   output_dir.mkdir(exist_ok=True)
+
+    
   # バックアップフォルダを作成（存在しない場合）
   backup_dir.mkdir(exist_ok=True)
-
-  # バックアップ対象のパターンをリスト化
-  # appid そのもの (例: 123)、appid_ で始まるもの (例: 123_****)
-  backup_patterns = [f'{appid}', f'{appid}_*']
-
-  # 各パターンに対してディレクトリを検索してバックアップに移動
-  for pattern in backup_patterns:
-    for dir_path in output_dir.glob(pattern):
-      if dir_path.is_dir():
-        base_destination = backup_dir / dir_path.name
-        destination = base_destination
-        
-        # 既存ディレクトリがある場合は連番を付与 (最大20まで)
-        counter = 1
-        while destination.exists() and counter <= 20:
-          destination = backup_dir / f"{dir_path.name}_{counter}"
-          counter += 1
-        
-        if counter > 20:
-          print(f"警告: {dir_path.name} のバックアップ先が20個を超えています。バックアップをスキップします。")
-          continue
-          
-        shutil.move(str(dir_path), str(destination))
-        print(f"{dir_path} を {destination} に移動しました。")
 
   # 現在の日時を取得してフォーマット
   timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -213,7 +191,6 @@ def main(appid, api_token=None, subdomain=None, username=None, password=None):
 
     # --- (1) settings からアプリ名を取得 ---
     app_name = get_app_name_by_settings(appid, api_token, subdomain)
-
     # --- (2) ディレクトリ構造を作成 ---
     base_dir, js_dir, json_dir = create_directory_structure(appid, app_name)
 

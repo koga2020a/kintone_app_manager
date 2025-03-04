@@ -21,6 +21,7 @@ from datetime import datetime
 # 定数定義
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR / "output"
+PREVIOUS_OUTPUT_DIR = SCRIPT_DIR / "previous_output"
 BACKUP_DIR = SCRIPT_DIR / "backup"
 ENV_FILE = SCRIPT_DIR / ".kintone.env"
 CONFIG_FILE = SCRIPT_DIR / "config_UserAccount.yaml"
@@ -455,6 +456,62 @@ def generate_acl_excel(config, logger, app_id=None):
         else:
             return False
 
+# ディレクトリ操作関数
+def prepare_directories():
+    """
+    ディレクトリの準備:
+    1. PREVIOUS_OUTPUT_DIRを空にする
+    2. OUTPUT_DIRの内容をPREVIOUS_OUTPUT_DIRに移動
+    3. OUTPUT_DIRを作成
+    """
+    # 各ディレクトリが存在しない場合は作成
+    for directory in [OUTPUT_DIR, PREVIOUS_OUTPUT_DIR, BACKUP_DIR]:
+        directory.mkdir(exist_ok=True)
+    
+    # PREVIOUS_OUTPUT_DIRを空にする
+    if PREVIOUS_OUTPUT_DIR.exists():
+        for item in PREVIOUS_OUTPUT_DIR.iterdir():
+            if item.is_file():
+                item.unlink()
+            elif item.is_dir():
+                import shutil
+                shutil.rmtree(item)
+    
+    # OUTPUT_DIRの内容をPREVIOUS_OUTPUT_DIRに移動
+    if OUTPUT_DIR.exists():
+        for item in OUTPUT_DIR.iterdir():
+            if item.is_file():
+                import shutil
+                shutil.move(str(item), str(PREVIOUS_OUTPUT_DIR / item.name))
+            elif item.is_dir():
+                import shutil
+                shutil.move(str(item), str(PREVIOUS_OUTPUT_DIR / item.name))
+    
+    # OUTPUT_DIRを作成（移動後に空になっている可能性があるため）
+    OUTPUT_DIR.mkdir(exist_ok=True)
+
+def backup_output():
+    """
+    OUTPUT_DIRの内容をBACKUP_DIRにバックアップする
+    バックアップディレクトリ名: YYYYMMDD_HHMMSS
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_subdir = BACKUP_DIR / timestamp
+    
+    # バックアップディレクトリを作成
+    backup_subdir.mkdir(exist_ok=True)
+    
+    # OUTPUT_DIRの内容をバックアップディレクトリにコピー
+    if OUTPUT_DIR.exists():
+        import shutil
+        for item in OUTPUT_DIR.iterdir():
+            if item.is_file():
+                shutil.copy2(str(item), str(backup_subdir / item.name))
+            elif item.is_dir():
+                shutil.copytree(str(item), str(backup_subdir / item.name))
+    
+    return backup_subdir
+
 def main():
     """メイン関数"""
     # コマンドライン引数の解析
@@ -519,6 +576,11 @@ def main():
     # ロギングの設定
     logger = setup_logging()
     logger.info("KintoneRunnerを起動しました")
+    
+    # ディレクトリの準備
+    logger.info("ディレクトリの準備を開始します")
+    prepare_directories()
+    logger.info("ディレクトリの準備が完了しました")
     
     # 設定ファイルの読み込み
     env_file = Path(args.env) if args.env else ENV_FILE
@@ -596,6 +658,12 @@ def main():
         if group_result:
             print("グループ一覧:")
             print(group_result)
+    
+    # 処理完了後にバックアップを作成
+    if args.command in ['users', 'app', 'acl', 'all']:
+        backup_dir = backup_output()
+        logger.info(f"出力ファイルを {backup_dir} にバックアップしました")
+        print(f"出力ファイルを {backup_dir} にバックアップしました")
     
     logger.info("KintoneRunnerを終了します")
 
