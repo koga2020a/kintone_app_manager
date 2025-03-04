@@ -1,6 +1,8 @@
 output/
 venv/
 log/
+backup/
+previous_output/
 
 .kintone.env
 
