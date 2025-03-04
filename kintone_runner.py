@@ -21,6 +21,7 @@ from datetime import datetime
 # 定数定義
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR / "output"
+BACKUP_DIR = SCRIPT_DIR / "backup"
 ENV_FILE = SCRIPT_DIR / ".kintone.env"
 CONFIG_FILE = SCRIPT_DIR / "config_UserAccount.yaml"
 

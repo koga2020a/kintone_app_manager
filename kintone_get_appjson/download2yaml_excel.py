@@ -61,7 +61,7 @@ def create_directory_structure(appid, app_name):
    ディレクトリ名は appid_アプリ名_日時
   """
   output_dir = Path('./output')
-  backup_dir = output_dir / 'backup'
+  backup_dir = Path('./backup')
 
   # 出力先フォルダを作成（存在しない場合）
   output_dir.mkdir(exist_ok=True)
