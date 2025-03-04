@@ -25,6 +25,7 @@ PREVIOUS_OUTPUT_DIR = SCRIPT_DIR / "previous_output"
 BACKUP_DIR = SCRIPT_DIR / "backup"
 ENV_FILE = SCRIPT_DIR / ".kintone.env"
 CONFIG_FILE = SCRIPT_DIR / "config_UserAccount.yaml"
+ERROR_REPORT_FILE = SCRIPT_DIR / "error_report.txt"
 
 # 各ディレクトリのパス
 USER_GROUP_DIR = SCRIPT_DIR / "kintone_get_user_group"
@@ -159,6 +160,56 @@ def display_output_info():
     print("※ すべてのファイルは 'all' コマンドでも一括生成できます。")
     print("※ 出力先ディレクトリ: ./output/")
 
+# エラー情報をファイルに記録する関数
+def log_error_to_file(logger, error, command=None, stdout=None, stderr=None, context=None):
+    """
+    エラー情報をerror_report.txtファイルに追記する
+    
+    Args:
+        logger (Logger): ロガーオブジェクト
+        error (Exception): 発生した例外
+        command (str, optional): 実行されたコマンド
+        stdout (str, optional): 標準出力の内容
+        stderr (str, optional): 標準エラー出力の内容
+        context (str, optional): エラーが発生した文脈（どの処理中か）
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    try:
+        with open(ERROR_REPORT_FILE, 'a', encoding='utf-8') as f:
+            f.write(f"===== エラーレポート: {timestamp} =====\n")
+            
+            if context:
+                f.write(f"処理内容: {context}\n")
+                
+            if command:
+                # パスワードなどの機密情報をマスク
+                masked_command = command
+                if isinstance(command, list):
+                    masked_command = ' '.join(command)
+                masked_command = masked_command.replace('"password"', '"********"').replace("password", "********")
+                f.write(f"実行コマンド: {masked_command}\n")
+                
+            f.write(f"エラータイプ: {type(error).__name__}\n")
+            f.write(f"エラーメッセージ: {str(error)}\n")
+            
+            # トレースバック情報を追加
+            import traceback
+            tb_str = traceback.format_exc()
+            f.write(f"\n--- トレースバック ---\n{tb_str}\n")
+            
+            if stdout:
+                f.write(f"\n--- 標準出力 ---\n{stdout}\n")
+                
+            if stderr:
+                f.write(f"\n--- 標準エラー出力 ---\n{stderr}\n")
+                
+            f.write("\n\n")
+            
+        logger.info(f"エラー情報を {ERROR_REPORT_FILE} に記録しました")
+    except Exception as e:
+        logger.error(f"エラー情報の記録中にエラーが発生しました: {e}")
+
 # ユーザーとグループ情報の取得
 def get_user_group_info(config, logger, output_format="excel"):
     """
@@ -197,6 +248,14 @@ def get_user_group_info(config, logger, output_format="excel"):
         logger.error(f"ユーザーとグループ情報の取得中にエラーが発生しました: {e}")
         logger.error(f"標準出力: {e.stdout}")
         logger.error(f"標準エラー: {e.stderr}")
+        log_error_to_file(
+            logger, 
+            e, 
+            command=cmd, 
+            stdout=e.stdout, 
+            stderr=e.stderr, 
+            context="ユーザーとグループ情報の取得"
+        )
         return False
 
 # アプリのJSONデータ取得
@@ -245,6 +304,14 @@ def get_app_json(config, logger, app_id=None):
             logger.error(f"アプリのJSONデータ取得中にエラーが発生しました: {e}")
             logger.error(f"標準出力: {e.stdout}")
             logger.error(f"標準エラー: {e.stderr}")
+            log_error_to_file(
+                logger, 
+                e, 
+                command=cmd, 
+                stdout=e.stdout, 
+                stderr=e.stderr, 
+                context=f"アプリID {app_id} のJSONデータ取得"
+            )
             return False
     else:
         # 全てのアプリを処理
@@ -270,6 +337,14 @@ def get_app_json(config, logger, app_id=None):
                 logger.error(f"アプリID {app_id} のJSONデータ取得中にエラーが発生しました: {e}")
                 logger.error(f"標準出力: {e.stdout}")
                 logger.error(f"標準エラー: {e.stderr}")
+                log_error_to_file(
+                    logger, 
+                    e, 
+                    command=cmd, 
+                    stdout=e.stdout, 
+                    stderr=e.stderr, 
+                    context=f"アプリID {app_id} のJSONデータ取得"
+                )
                 success = False
                 
         return success
@@ -336,6 +411,16 @@ def manage_groups(config, logger, action, params=None):
         logger.error(f"グループ操作中にエラーが発生しました: {e}")
         logger.error(f"標準出力: {e.stdout}")
         logger.error(f"標準エラー: {e.stderr}")
+        
+        # エラー情報をファイルに記録
+        log_error_to_file(
+            logger, 
+            e, 
+            command=cmd, 
+            stdout=e.stdout, 
+            stderr=e.stderr, 
+            context=f"グループ操作 '{action}'"
+        )
         
         # 一時ファイルを削除
         if tmp_config_file.exists():
@@ -413,6 +498,14 @@ def generate_acl_excel(config, logger, app_id=None):
             logger.error(f"ACL情報のExcel変換中にエラーが発生しました: {e}")
             logger.error(f"標準出力: {e.stdout}")
             logger.error(f"標準エラー: {e.stderr}")
+            log_error_to_file(
+                logger, 
+                e, 
+                command=cmd, 
+                stdout=e.stdout, 
+                stderr=e.stderr, 
+                context=f"アプリID {app_id} のACL情報のExcel変換"
+            )
             return False
     else:
         # 全てのアプリを処理
@@ -447,6 +540,14 @@ def generate_acl_excel(config, logger, app_id=None):
                 logger.error(f"アプリID {app_id} のACL情報のExcel変換中にエラーが発生しました: {e}")
                 logger.error(f"標準出力: {e.stdout}")
                 logger.error(f"標準エラー: {e.stderr}")
+                log_error_to_file(
+                    logger, 
+                    e, 
+                    command=cmd, 
+                    stdout=e.stdout, 
+                    stderr=e.stderr, 
+                    context=f"アプリID {app_id} のACL情報のExcel変換"
+                )
                 success = False
         
         if success and generated_files:
@@ -514,6 +615,15 @@ def backup_output():
 
 def main():
     """メイン関数"""
+    # エラーレポートファイルの存在確認と初期化
+    if not ERROR_REPORT_FILE.exists():
+        try:
+            with open(ERROR_REPORT_FILE, 'w', encoding='utf-8') as f:
+                f.write(f"# Kintone Runner エラーレポート\n")
+                f.write(f"# 作成日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        except Exception as e:
+            print(f"エラーレポートファイルの初期化中にエラーが発生しました: {e}")
+    
     # コマンドライン引数の解析
     parser = argparse.ArgumentParser(description='Kintone関連ツールの統合実行スクリプト')
     subparsers = parser.add_subparsers(dest='command', help='実行するコマンド')
