@@ -523,6 +523,45 @@ class ExcelFormatter:
       set_val_font(self.ws[f'F{i+3}'], new_row[4])
       set_val_font(self.ws[f'G{i+3}'], new_row[5])
       set_val_font(self.ws[f'S{i+3}'], new_row[6])
+      
+      # BA列にフィールドコードを記載
+      if len(row) > 5 and row[4] != 'GROUP' and row[4] != 'LABEL' and row[4] != 'HR' and row[4] != 'SPACER':
+        field_code = row[5]  # フィールドコードは6列目（インデックス5）
+        set_val_font(self.ws[f'BA{i+3}'], field_code)
+        
+      # BB列にフィールド種別を記載
+      if len(row) > 4:
+        field_type = row[4]  # フィールドタイプは5列目（インデックス4）
+        # フィールドタイプを日本語に変換
+        field_type_ja = {
+          'SINGLE_LINE_TEXT': '文字列（1行）',
+          'MULTI_LINE_TEXT': '文字列（複数行）',
+          'RICH_TEXT': 'リッチエディター',
+          'NUMBER': '数値',
+          'CALC': '計算',
+          'DATE': '日付',
+          'TIME': '時刻',
+          'DATETIME': '日時',
+          'DROP_DOWN': 'ドロップダウン',
+          'RADIO_BUTTON': 'ラジオボタン',
+          'CHECK_BOX': 'チェックボックス',
+          'MULTI_SELECT': '複数選択',
+          'FILE': '添付ファイル',
+          'LINK': 'リンク',
+          'USER_SELECT': 'ユーザー選択',
+          'GROUP_SELECT': 'グループ選択',
+          'ORGANIZATION_SELECT': '組織選択',
+          'STATUS': 'ステータス',
+          'ASSIGNEE': '作業者',
+          'CATEGORY': 'カテゴリー',
+          'GROUP': 'グループ',
+          'SUBTABLE': 'テーブル',
+          'REFERENCE_TABLE': '関連レコード一覧',
+          'LABEL': 'ラベル',
+          'HR': '罫線',
+          'SPACER': 'スペース'
+        }.get(field_type, field_type)
+        set_val_font(self.ws[f'BB{i+3}'], field_type_ja)
 
       # 項目名セル、セル結合
       if new_row[4] != '':
@@ -716,6 +755,10 @@ def create_excel_report(appid, base_dir):
 
   formatter.set_row_height(200, 20)
   formatter.set_column_width(1, 26*5, 22)
+  
+  # BA列とBB列の幅を設定
+  worksheet.column_dimensions['BA'].width = 25
+  worksheet.column_dimensions['BB'].width = 25
 
   # 白背景の設定
   white_fill = PatternFill(start_color='FFFFFF', end_color='FFFFFF', fill_type="solid")
@@ -730,6 +773,8 @@ def create_excel_report(appid, base_dir):
   formatter.merge_cells_and_set_content('U2', 'V2', 'JS', alignment="center", bottom_border=True, right_border=True)
   formatter.merge_cells_and_set_content('W2', 'X2', 'plugin', alignment="center", bottom_border=True, right_border=True)
   formatter.merge_cells_and_set_content('Y2', 'AO2', '備考', alignment="left", bottom_border=True, right_border=True)
+  formatter.merge_cells_and_set_content('BA2', 'BA2', 'フィールドコード', alignment="center", bottom_border=True, right_border=True)
+  formatter.merge_cells_and_set_content('BB2', 'BB2', 'フィールド種別', alignment="center", bottom_border=True, right_border=True)
 
   formatter.set_by_out02_tsv(tsv_filename)
   formatter.save()
