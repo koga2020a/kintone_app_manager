@@ -5,6 +5,7 @@ backup/
 previous_output/
 
 .kintone.env
+.env
 
 old_*
 

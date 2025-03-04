@@ -15,6 +15,7 @@ import yaml
 import argparse
 import subprocess
 import logging
+import re
 from pathlib import Path
 from datetime import datetime
 
@@ -657,6 +658,45 @@ def backup_output():
     
     return backup_subdir
 
+def remove_datetime_suffix(directory):
+    """
+    出力ディレクトリ内のファイル名とディレクトリ名から日時部分を除去する
+    
+    Args:
+        directory (Path): 処理対象のディレクトリ
+    """
+    logger = logging.getLogger("kintone_runner")
+    logger.info("ファイル名とディレクトリ名から日時部分を除去します")
+    
+    # 日時パターン（_YYYYMMDD_HHMMSS）を定義
+    datetime_pattern = re.compile(r'_\d{8}_\d{6}')
+    
+    try:
+        # ディレクトリ内のすべてのファイルとディレクトリを処理
+        for item in directory.iterdir():
+            original_name = item.name
+            # 日時部分を除去
+            new_name = datetime_pattern.sub('', original_name)
+            
+            if new_name != original_name:
+                try:
+                    new_path = item.parent / new_name
+                    # 同名のファイルが存在する場合は上書き
+                    if new_path.exists():
+                        if new_path.is_file():
+                            new_path.unlink()
+                        else:
+                            import shutil
+                            shutil.rmtree(new_path)
+                    item.rename(new_path)
+                    logger.info(f"リネーム: {original_name} -> {new_name}")
+                except Exception as e:
+                    logger.error(f"リネーム中にエラーが発生しました ({original_name}): {e}")
+        
+        logger.info("ファイル名とディレクトリ名からの日時部分の除去が完了しました")
+    except Exception as e:
+        logger.error(f"ファイル名とディレクトリ名の処理中にエラーが発生しました: {e}")
+
 def main():
     """メイン関数"""
     # コマンドライン引数の解析
@@ -825,6 +865,9 @@ def main():
         backup_dir = backup_output()
         logger.info(f"出力ファイルを {backup_dir} にバックアップしました")
         print(f"出力ファイルを {backup_dir} にバックアップしました")
+        
+        # ファイル名から日時部分を除去
+        remove_datetime_suffix(OUTPUT_DIR)
     
     logger.info("KintoneRunnerを終了します")
 
