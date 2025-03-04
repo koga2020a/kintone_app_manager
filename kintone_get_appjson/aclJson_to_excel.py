@@ -404,7 +404,7 @@ def create_header_cell(ws, row, col, value, rotation=False, merge_cells=None,
   vertical_value = 'center' if tate_center else 'top'
   align_params = {'wrap_text': True, 'vertical': vertical_value}
   if rotation:
-    align_params['textRotation'] = 180 # 縦書き
+    align_params['textRotation'] = VERTICAL_TEXT_RIGHT_TO_LEFT # 縦書き
     align_params['horizontal'] = 'center' # 縦書き時の中央揃え
   else:
     align_params['horizontal'] = 'center' # その他のセルは中央揃え
@@ -465,10 +465,8 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
   # ウインドウ枠を固定
   ws.freeze_panes = 'E4'
 
-  # D列の幅を32pxに設定
-  d_width_in_pixels = 32
-  excel_width = (d_width_in_pixels - 5) / 7 + 1
-  ws.column_dimensions['D'].width = excel_width
+  # D列の幅を6 excel widthに設定
+  ws.column_dimensions['D'].width = 6 #excel_width
 
   # 1行目を空ける
   current_row = 2
@@ -519,7 +517,7 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
                            rotation=True, background_color=background_color)
           # 2行目のF列以降を180度回転に設定
           if current_col >= 6:
-              ws.cell(row=current_row + 1, column=current_col).alignment = Alignment(textRotation=VERTICAL_TEXT_JAPANESE, horizontal='center', vertical='center', wrap_text=True)
+              ws.cell(row=current_row + 1, column=current_col).alignment = Alignment(textRotation=VERTICAL_TEXT_RIGHT_TO_LEFT, horizontal='center', vertical='center', wrap_text=True)
           current_col += 1
 
     # 重複を除いた単純なユーザ名一覧の取得
@@ -548,7 +546,7 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
       # 個別ユーザー名（3行目は90度回転）
       for user_name in sorted(permission_target_user_names):
           create_header_cell(ws, current_row + 1, current_col, user_name, 
-                           rotation=VERTICAL_TEXT_LEFT_TO_RIGHT, background_color='CC7777')
+                           rotation=VERTICAL_TEXT_RIGHT_TO_LEFT, background_color='CC7777')
           current_col += 1
 
     # データ行の書き込み
@@ -654,7 +652,7 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
           cell = ws.cell(row=current_entity_row, column=3, value=entity_info['name'])
           
           # D列に権限を表示（括弧なし）
-          permissions_str = '･'.join(entity_info['permissions'])
+          permissions_str = '･'.join(entity_info['permissions']).rstrip('･')
           d_cell = ws.cell(row=current_entity_row, column=4, value=permissions_str)
           
           # 4行目以降のD列を90度右回転に設定
@@ -758,7 +756,7 @@ def convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map,
     
     # F列以降の列幅設定
     for col in range(6, current_col):
-      ws.column_dimensions[get_column_letter(col)].width = 15
+      ws.column_dimensions[get_column_letter(col)].width = 4
 
     ws.cell(row=1, column=2).value = "凡例：　閲覧：V　　編集：E　　削除：D"
 
