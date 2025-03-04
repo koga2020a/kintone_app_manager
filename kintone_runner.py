@@ -565,6 +565,14 @@ def prepare_directories():
     2. OUTPUT_DIRの内容をPREVIOUS_OUTPUT_DIRに移動
     3. OUTPUT_DIRを作成
     """
+    import shutil
+    import logging
+    logger = logging.getLogger("kintone_runner")
+    
+    # Excelファイルが開かれているかどうかを確認するフラグ
+    excel_files_open = False
+    excel_files_list = []
+    
     # 各ディレクトリが存在しない場合は作成
     for directory in [OUTPUT_DIR, PREVIOUS_OUTPUT_DIR, BACKUP_DIR]:
         directory.mkdir(exist_ok=True)
@@ -573,23 +581,59 @@ def prepare_directories():
     if PREVIOUS_OUTPUT_DIR.exists():
         for item in PREVIOUS_OUTPUT_DIR.iterdir():
             if item.is_file():
-                item.unlink()
+                try:
+                    item.unlink()
+                except PermissionError:
+                    if item.name.startswith("~$"):
+                        excel_files_open = True
+                        excel_files_list.append(item.name[2:])  # "~$"を除いたファイル名
+                        logger.warning(f"ファイル {item.name[2:]} はExcelで開かれているため削除できません。")
+                    else:
+                        logger.warning(f"ファイル {item.name} へのアクセスが拒否されました。")
             elif item.is_dir():
-                import shutil
-                shutil.rmtree(item)
+                try:
+                    shutil.rmtree(item)
+                except (PermissionError, OSError) as e:
+                    logger.warning(f"ディレクトリ {item.name} の削除中にエラーが発生しました: {e}")
     
     # OUTPUT_DIRの内容をPREVIOUS_OUTPUT_DIRに移動
     if OUTPUT_DIR.exists():
         for item in OUTPUT_DIR.iterdir():
-            if item.is_file():
-                import shutil
-                shutil.move(str(item), str(PREVIOUS_OUTPUT_DIR / item.name))
-            elif item.is_dir():
-                import shutil
-                shutil.move(str(item), str(PREVIOUS_OUTPUT_DIR / item.name))
+            try:
+                if item.is_file():
+                    # Excelの一時ファイルをチェック
+                    if item.name.startswith("~$"):
+                        excel_files_open = True
+                        excel_files_list.append(item.name[2:])  # "~$"を除いたファイル名
+                        logger.warning(f"Excelファイル {item.name[2:]} が開かれています。")
+                        continue
+                    shutil.move(str(item), str(PREVIOUS_OUTPUT_DIR / item.name))
+                elif item.is_dir():
+                    # ディレクトリ内にExcelの一時ファイルがないか確認
+                    for file in item.glob("~$*"):
+                        excel_files_open = True
+                        excel_files_list.append(file.name[2:])  # "~$"を除いたファイル名
+                        logger.warning(f"ディレクトリ {item.name} 内のExcelファイル {file.name[2:]} が開かれています。")
+                    
+                    # Excelが開かれていない場合は通常通り移動
+                    shutil.move(str(item), str(PREVIOUS_OUTPUT_DIR / item.name))
+            except (PermissionError, OSError) as e:
+                if "~$" in str(e):
+                    excel_files_open = True
+                    logger.warning(f"Excelファイルが開かれているため、ファイルを移動できませんでした。")
+                else:
+                    logger.warning(f"ファイルまたはディレクトリの移動中にエラーが発生しました: {e}")
+    
+    # Excelファイルが開かれている場合は例外を発生させる
+    if excel_files_open:
+        files_str = ", ".join(excel_files_list)
+        error_msg = f"以下のExcelファイルが開かれているため処理を続行できません: {files_str}"
+        logger.error(error_msg)
+        raise PermissionError(error_msg)
     
     # OUTPUT_DIRを作成（移動後に空になっている可能性があるため）
     OUTPUT_DIR.mkdir(exist_ok=True)
+    logger.info("ディレクトリの準備が完了しました。")
 
 def backup_output():
     """
@@ -615,15 +659,6 @@ def backup_output():
 
 def main():
     """メイン関数"""
-    # エラーレポートファイルの存在確認と初期化
-    if not ERROR_REPORT_FILE.exists():
-        try:
-            with open(ERROR_REPORT_FILE, 'w', encoding='utf-8') as f:
-                f.write(f"# Kintone Runner エラーレポート\n")
-                f.write(f"# 作成日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-        except Exception as e:
-            print(f"エラーレポートファイルの初期化中にエラーが発生しました: {e}")
-    
     # コマンドライン引数の解析
     parser = argparse.ArgumentParser(description='Kintone関連ツールの統合実行スクリプト')
     subparsers = parser.add_subparsers(dest='command', help='実行するコマンド')
@@ -689,8 +724,24 @@ def main():
     
     # ディレクトリの準備
     logger.info("ディレクトリの準備を開始します")
-    prepare_directories()
-    logger.info("ディレクトリの準備が完了しました")
+    try:
+        prepare_directories()
+    except Exception as e:
+        logger.error(f"ディレクトリの準備中にエラーが発生しました: {e}")
+        # Excelファイルが開かれているかどうかを確認
+        if "~$" in str(e) or any(temp_file.startswith("~$") for temp_file in str(e).split() if temp_file.startswith("~$")):
+            logger.error("Excelファイルが開かれているため処理を終了します。")
+            print(f"エラー: Excelファイルが開かれているため処理を続行できません。")
+            print("Excelファイルを閉じてから再実行してください。")
+            sys.exit(1)
+        else:
+            # Excel以外のエラーの場合は警告を表示して続行
+            logger.warning("エラーが発生しましたが、処理を続行します。一部のファイルが正しく処理されない可能性があります。")
+            print(f"警告: ディレクトリの準備中にエラーが発生しました: {e}")
+            print("処理を続行しますが、一部のファイルが正しく処理されない可能性があります。")
+            
+            # 最低限のディレクトリ作成を確保
+            OUTPUT_DIR.mkdir(exist_ok=True)
     
     # 設定ファイルの読み込み
     env_file = Path(args.env) if args.env else ENV_FILE
