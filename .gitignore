@@ -1,6 +1,7 @@
 output/
 venv/
 log/
+logs/
 backup/
 previous_output/
 

@@ -46,6 +46,12 @@ OUTPUT_FILE_INFO = {
             "description": "アプリのACL情報（ユーザー名・グループ名を反映）",
             "command": "acl",
             "args": "--id [アプリID] (省略時は全アプリ対象)"
+        },
+        {
+            "name": "kintone_app_settings_summary_[日時].xlsx",
+            "description": "アプリの全体設定一覧表",
+            "command": "summary",
+            "args": "--output [ファイル名] (省略時は自動生成)"
         }
     ],
     "csv": [
@@ -675,6 +681,10 @@ def main():
     acl_excel_parser = subparsers.add_parser('acl', help='アプリのACL情報をExcelに変換（出力: acl_report_[アプリID]_[日時].xlsx）')
     acl_excel_parser.add_argument('--id', type=int, help='変換するアプリID')
     
+    # アプリ設定一覧表生成コマンド
+    summary_parser = subparsers.add_parser('summary', help='アプリの全体設定一覧表をExcelで出力（出力: kintone_app_settings_summary_[日時].xlsx）')
+    summary_parser.add_argument('--output', type=str, help='出力ファイル名')
+    
     # グループ操作コマンド
     group_parser = subparsers.add_parser('group', help='グループ操作')
     group_subparsers = group_parser.add_subparsers(dest='action', help='実行するアクション')
@@ -769,6 +779,40 @@ def main():
             else:
                 print(f"ACL情報を {result} に出力しました")
             
+    elif args.command == 'summary':
+        # アプリ設定一覧表の生成
+        logger.info("アプリ設定一覧表の生成を開始します")
+        script_path = SCRIPT_DIR / "app_settings_summary.py"
+        
+        if not script_path.exists():
+            logger.error(f"スクリプトファイルが見つかりません: {script_path}")
+            print(f"エラー: スクリプトファイル {script_path} が見つかりません")
+            sys.exit(1)
+        
+        cmd = [sys.executable, str(script_path)]
+        if args.output:
+            cmd.extend(["--output", args.output])
+        
+        try:
+            logger.info(f"実行コマンド: {' '.join(cmd)}")
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            logger.info("アプリ設定一覧表の生成が完了しました")
+            print(result.stdout)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"アプリ設定一覧表の生成中にエラーが発生しました: {e}")
+            logger.error(f"標準出力: {e.stdout}")
+            logger.error(f"標準エラー: {e.stderr}")
+            log_error_to_file(
+                logger, 
+                e, 
+                command=cmd, 
+                stdout=e.stdout, 
+                stderr=e.stderr, 
+                context="アプリ設定一覧表の生成"
+            )
+            print(f"エラー: アプリ設定一覧表の生成中にエラーが発生しました: {e}")
+            sys.exit(1)
+            
     elif args.command == 'group':
         if args.action == 'list':
             result = manage_groups(config, logger, 'list')
@@ -800,31 +844,41 @@ def main():
             print(f"ユーザーとグループ情報を {user_group_file} に出力しました")
         
         # 2. アプリのJSONデータ取得
-        app_result = get_app_json(config, logger)
-        if app_result:
+        app_json_result = get_app_json(config, logger)
+        if app_json_result:
             print("アプリのJSONデータ取得が完了しました")
         
         # 3. ACL情報のExcel変換
-        acl_result = generate_acl_excel(config, logger)
-        if acl_result:
-            if isinstance(acl_result, list):
+        acl_excel_result = generate_acl_excel(config, logger)
+        if acl_excel_result:
+            if isinstance(acl_excel_result, list):
                 print("以下のファイルにACL情報を出力しました:")
-                for file in acl_result:
+                for file in acl_excel_result:
                     print(f"- {file}")
             else:
-                print(f"ACL情報を {acl_result} に出力しました")
+                print(f"ACL情報を {acl_excel_result} に出力しました")
         
-        # 4. グループ一覧の表示
-        group_result = manage_groups(config, logger, 'list')
-        if group_result:
-            print("グループ一覧:")
-            print(group_result)
+        # 4. アプリ設定一覧表の生成
+        logger.info("アプリ設定一覧表の生成を開始します")
+        script_path = SCRIPT_DIR / "app_settings_summary.py"
+        
+        if script_path.exists():
+            cmd = [sys.executable, str(script_path)]
+            try:
+                logger.info(f"実行コマンド: {' '.join(cmd)}")
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                logger.info("アプリ設定一覧表の生成が完了しました")
+                print(result.stdout)
+            except subprocess.CalledProcessError as e:
+                logger.error(f"アプリ設定一覧表の生成中にエラーが発生しました: {e}")
+                logger.warning("処理を続行します")
+        else:
+            logger.warning(f"スクリプトファイル {script_path} が見つからないため、アプリ設定一覧表の生成をスキップします")
     
-    # 処理完了後にバックアップを作成
-    if args.command in ['users', 'app', 'acl', 'all']:
-        backup_dir = backup_output()
-        logger.info(f"出力ファイルを {backup_dir} にバックアップしました")
-        print(f"出力ファイルを {backup_dir} にバックアップしました")
+    # 処理完了後のバックアップ
+    backup_dir = backup_output()
+    logger.info(f"出力ファイルを {backup_dir} にバックアップしました")
+    print(f"出力ファイルを {backup_dir} にバックアップしました")
     
     logger.info("KintoneRunnerを終了します")
 
