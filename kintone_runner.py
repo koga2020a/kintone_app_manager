@@ -772,26 +772,29 @@ def main():
     logger = setup_logging()
     logger.info("KintoneRunnerを起動しました")
     
-    # ディレクトリの準備
-    logger.info("ディレクトリの準備を開始します")
-    try:
-        prepare_directories()
-    except Exception as e:
-        logger.error(f"ディレクトリの準備中にエラーが発生しました: {e}")
-        # Excelファイルが開かれているかどうかを確認
-        if "~$" in str(e) or any(temp_file.startswith("~$") for temp_file in str(e).split() if temp_file.startswith("~$")):
-            logger.error("Excelファイルが開かれているため処理を終了します。")
-            print(f"エラー: Excelファイルが開かれているため処理を続行できません。")
-            print("Excelファイルを閉じてから再実行してください。")
-            sys.exit(1)
-        else:
-            # Excel以外のエラーの場合は警告を表示して続行
-            logger.warning("エラーが発生しましたが、処理を続行します。一部のファイルが正しく処理されない可能性があります。")
-            print(f"警告: ディレクトリの準備中にエラーが発生しました: {e}")
-            print("処理を続行しますが、一部のファイルが正しく処理されない可能性があります。")
-            
-            # 最低限のディレクトリ作成を確保
-            OUTPUT_DIR.mkdir(exist_ok=True)
+    # ディレクトリの準備（allコマンドの場合のみ実行）
+    if args.command == 'all':
+        logger.info("ディレクトリの準備を開始します")
+        try:
+            prepare_directories()
+        except Exception as e:
+            logger.error(f"ディレクトリの準備中にエラーが発生しました: {e}")
+            # Excelファイルが開かれているかどうかを確認
+            if "~$" in str(e) or any(temp_file.startswith("~$") for temp_file in str(e).split() if temp_file.startswith("~$")):
+                logger.error("Excelファイルが開かれているため処理を終了します。")
+                print(f"エラー: Excelファイルが開かれているため処理を続行できません。")
+                print("Excelファイルを閉じてから再実行してください。")
+                sys.exit(1)
+            else:
+                # Excel以外のエラーの場合は警告を表示して続行
+                logger.warning("エラーが発生しましたが、処理を続行します。一部のファイルが正しく処理されない可能性があります。")
+                print(f"警告: ディレクトリの準備中にエラーが発生しました: {e}")
+                print("処理を続行しますが、一部のファイルが正しく処理されない可能性があります。")
+    
+    # 最低限のディレクトリ作成を確保
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    PREVIOUS_OUTPUT_DIR.mkdir(exist_ok=True)
+    BACKUP_DIR.mkdir(exist_ok=True)
     
     # 設定ファイルの読み込み
     env_file = Path(args.env) if args.env else ENV_FILE
@@ -915,21 +918,15 @@ def main():
         else:
             logger.warning(f"スクリプトファイル {script_path} が見つからないため、アプリ設定一覧表の生成をスキップします")
     
-<<<<<<< HEAD
-    # 処理完了後のバックアップ
-    backup_dir = backup_output()
-    logger.info(f"出力ファイルを {backup_dir} にバックアップしました")
-    print(f"出力ファイルを {backup_dir} にバックアップしました")
-=======
-    # 処理完了後にバックアップを作成
-    if args.command in ['users', 'app', 'acl', 'all']:
+    # allコマンドの場合のみバックアップと日時部分の除去を実行
+    if args.command == 'all':
+        # 処理完了後にバックアップを作成
         backup_dir = backup_output()
         logger.info(f"出力ファイルを {backup_dir} にバックアップしました")
         print(f"出力ファイルを {backup_dir} にバックアップしました")
         
         # ファイル名から日時部分を除去
         remove_datetime_suffix(OUTPUT_DIR)
->>>>>>> 2944b0bdde8ef28d57ec6d5e3b7203e9b93bbe41
     
     logger.info("KintoneRunnerを終了します")
 
