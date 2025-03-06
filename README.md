@@ -28,13 +28,31 @@
 
 1. リポジトリをクローンするか、ファイルをダウンロードします。
 
-2. 必要なパッケージをインストールします：
+2. 仮想環境をセットアップします：
 
 ```bash
+# Pythonの仮想環境モジュールをインストール（まだの場合）
+python -m pip install --user virtualenv
+
+# 仮想環境を作成して有効化
+python -m venv venv
+. venv/Scripts/activate  # Windowsの場合
+# source venv/bin/activate  # macOS/Linuxの場合
+
+# 仮想環境が有効になると、プロンプトの先頭に (venv) が表示されます
+```
+
+3. 必要なパッケージをインストールします：
+
+```bash
+# requirements.txtがある場合
+pip install -r requirements.txt
+
+# または個別にインストール
 pip install requests pyyaml pandas openpyxl
 ```
 
-3. 設定ファイルを準備します。`.kintone.env`ファイルを以下の形式で作成します：
+4. 設定ファイルを準備します。`.kintone.env`ファイルを以下の形式で作成します：
 
 ```yaml
 # Kintoneのサブドメイン (example.kintone.com の example 部分)
