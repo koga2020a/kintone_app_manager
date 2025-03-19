@@ -113,8 +113,9 @@ def load_env_config(env_file=None):
     
     try:
         with open(env_file, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-        
+            content = f.read()
+            config = yaml.safe_load(content)
+            
         # 必須項目をチェック
         required_keys = ['subdomain', 'username', 'password']
         missing_keys = [key for key in required_keys if key not in config]
@@ -122,6 +123,10 @@ def load_env_config(env_file=None):
         if missing_keys:
             print(f"エラー: 設定ファイルに以下の必須項目がありません: {', '.join(missing_keys)}")
             sys.exit(1)
+        
+        # app_tokens が辞書形式でない場合の処理
+        if 'app_tokens' in config and config['app_tokens'] is None:
+            config['app_tokens'] = {}
             
         return config
     except Exception as e:
@@ -284,13 +289,24 @@ def get_app_json(config, logger, app_id=None):
     # app_tokensからアプリIDとAPIトークンを取得
     app_tokens = config.get('app_tokens', {})
     
+    # デバッグ用
+    logger.info(f"app_tokens: {app_tokens}")
+    logger.info(f"app_tokens keys type: {[type(k) for k in app_tokens.keys()]}")
+    
     if app_id:
         # 特定のアプリIDが指定された場合
-        if str(app_id) not in app_tokens:
+        app_id_str = str(app_id)
+        app_id_int = int(app_id)
+        
+        # 文字列キーと整数キーの両方をチェック
+        if app_id_str in app_tokens:
+            api_token = app_tokens[app_id_str]
+        elif app_id_int in app_tokens:
+            api_token = app_tokens[app_id_int]
+        else:
             logger.error(f"アプリID {app_id} のAPIトークンが設定されていません")
             return False
             
-        api_token = app_tokens[str(app_id)]
         cmd = [
             sys.executable,
             str(script_path),
@@ -472,10 +488,21 @@ def generate_acl_excel(config, logger, app_id=None):
     
     # app_tokensからアプリIDとAPIトークンを取得
     app_tokens = config.get('app_tokens', {})
+    logger.info(f"app_tokens: {app_tokens}")
     
     if app_id:
         # 特定のアプリIDが指定された場合
-        if str(app_id) not in app_tokens:
+        app_id_str = str(app_id)
+        app_id_int = int(app_id)
+        
+        # 文字列キーと整数キーの両方をチェック
+        if app_id_str in app_tokens:
+            # api_token = app_tokens[app_id_str] # APIトークンのみ確認用
+            pass
+        elif app_id_int in app_tokens:
+            # api_token = app_tokens[app_id_int] # APIトークンのみ確認用
+            pass
+        else:
             logger.error(f"アプリID {app_id} のAPIトークンが設定されていません")
             return False
             
