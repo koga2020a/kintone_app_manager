@@ -669,6 +669,82 @@ def prepare_directories():
     OUTPUT_DIR.mkdir(exist_ok=True)
     logger.info("ディレクトリの準備が完了しました。")
 
+# 特定のアプリIDに関連するディレクトリのみを準備する関数
+def prepare_app_directories(app_id):
+    """
+    特定のアプリID向けのディレクトリ準備:
+    1. PREVIOUS_OUTPUT_DIRの指定アプリIDのディレクトリのみを削除
+    2. OUTPUT_DIRの指定アプリIDのディレクトリをPREVIOUS_OUTPUT_DIRに移動
+    3. OUTPUT_DIRを作成
+    
+    Args:
+        app_id (int): 処理対象のアプリID
+    """
+    import shutil
+    import logging
+    logger = logging.getLogger("kintone_runner")
+    
+    # Excelファイルが開かれているかどうかを確認するフラグ
+    excel_files_open = False
+    excel_files_list = []
+    
+    # 各ディレクトリが存在しない場合は作成
+    for directory in [OUTPUT_DIR, PREVIOUS_OUTPUT_DIR, BACKUP_DIR]:
+        directory.mkdir(exist_ok=True)
+    
+    # PREVIOUS_OUTPUT_DIRの指定アプリIDのディレクトリのみを削除
+    if PREVIOUS_OUTPUT_DIR.exists():
+        app_dir = find_existing_directory(PREVIOUS_OUTPUT_DIR, str(app_id))
+        if app_dir and app_dir.exists():
+            try:
+                for file in app_dir.glob("~$*"):
+                    excel_files_open = True
+                    excel_files_list.append(file.name[2:])
+                    logger.warning(f"ディレクトリ {app_dir.name} 内のExcelファイル {file.name[2:]} が開かれています。")
+                
+                if not excel_files_open:
+                    shutil.rmtree(app_dir)
+                    logger.info(f"PREVIOUS_OUTPUT_DIRから {app_dir.name} を削除しました")
+            except (PermissionError, OSError) as e:
+                if "~$" in str(e):
+                    excel_files_open = True
+                    logger.warning(f"Excelファイルが開かれているため、ディレクトリを削除できませんでした。")
+                else:
+                    logger.warning(f"ディレクトリ {app_dir.name} の削除中にエラーが発生しました: {e}")
+    
+    # OUTPUT_DIRの指定アプリIDのディレクトリをPREVIOUS_OUTPUT_DIRに移動
+    if OUTPUT_DIR.exists():
+        app_dir = find_existing_directory(OUTPUT_DIR, str(app_id))
+        if app_dir and app_dir.exists():
+            try:
+                # ディレクトリ内にExcelの一時ファイルがないか確認
+                for file in app_dir.glob("~$*"):
+                    excel_files_open = True
+                    excel_files_list.append(file.name[2:])
+                    logger.warning(f"ディレクトリ {app_dir.name} 内のExcelファイル {file.name[2:]} が開かれています。")
+                
+                # Excelが開かれていない場合は移動
+                if not excel_files_open:
+                    shutil.move(str(app_dir), str(PREVIOUS_OUTPUT_DIR / app_dir.name))
+                    logger.info(f"OUTPUT_DIRから {app_dir.name} をPREVIOUS_OUTPUT_DIRに移動しました")
+            except (PermissionError, OSError) as e:
+                if "~$" in str(e):
+                    excel_files_open = True
+                    logger.warning(f"Excelファイルが開かれているため、ディレクトリを移動できませんでした。")
+                else:
+                    logger.warning(f"ディレクトリ {app_dir.name} の移動中にエラーが発生しました: {e}")
+    
+    # Excelファイルが開かれている場合は例外を発生させる
+    if excel_files_open:
+        files_str = ", ".join(excel_files_list)
+        error_msg = f"以下のExcelファイルが開かれているため処理を続行できません: {files_str}"
+        logger.error(error_msg)
+        raise PermissionError(error_msg)
+    
+    # OUTPUT_DIRを作成（移動後に空になっている可能性があるため）
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    logger.info(f"アプリID {app_id} のディレクトリ準備が完了しました。")
+
 def backup_output():
     """
     OUTPUT_DIRの内容をBACKUP_DIRにバックアップする
@@ -817,6 +893,24 @@ def main():
                 logger.warning("エラーが発生しましたが、処理を続行します。一部のファイルが正しく処理されない可能性があります。")
                 print(f"警告: ディレクトリの準備中にエラーが発生しました: {e}")
                 print("処理を続行しますが、一部のファイルが正しく処理されない可能性があります。")
+    # appコマンドの場合、特定のアプリIDのディレクトリのみ準備
+    elif args.command == 'app' and args.id:
+        logger.info(f"アプリID {args.id} のディレクトリ準備を開始します")
+        try:
+            prepare_app_directories(args.id)
+        except Exception as e:
+            logger.error(f"ディレクトリの準備中にエラーが発生しました: {e}")
+            # Excelファイルが開かれているかどうかを確認
+            if "~$" in str(e) or any(temp_file.startswith("~$") for temp_file in str(e).split() if temp_file.startswith("~$")):
+                logger.error("Excelファイルが開かれているため処理を終了します。")
+                print(f"エラー: Excelファイルが開かれているため処理を続行できません。")
+                print("Excelファイルを閉じてから再実行してください。")
+                sys.exit(1)
+            else:
+                # Excel以外のエラーの場合は警告を表示して続行
+                logger.warning("エラーが発生しましたが、処理を続行します。一部のファイルが正しく処理されない可能性があります。")
+                print(f"警告: ディレクトリの準備中にエラーが発生しました: {e}")
+                print("処理を続行しますが、一部のファイルが正しく処理されない可能性があります。")
     
     # 最低限のディレクトリ作成を確保
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -838,6 +932,16 @@ def main():
         result = get_app_json(config, logger, args.id)
         if result:
             print("アプリのJSONデータ取得が完了しました")
+            
+            # appコマンドで特定のアプリIDが指定された場合、事後処理も実行
+            if args.id:
+                # 処理完了後にバックアップを作成
+                backup_dir = backup_output()
+                logger.info(f"出力ファイルを {backup_dir} にバックアップしました")
+                print(f"出力ファイルを {backup_dir} にバックアップしました")
+                
+                # ファイル名から日時部分を除去
+                remove_datetime_suffix(OUTPUT_DIR)
             
     elif args.command == 'acl':
         result = generate_acl_excel(config, logger, args.id)
