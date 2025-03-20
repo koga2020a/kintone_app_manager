@@ -780,14 +780,23 @@ def create_excel_report(appid, base_dir):
   formatter.save()
   print(f"Excelレポートを作成しました: {excel_filename}")
 
-def export_all_records(appid, api_token, base_dir, subdomain):
-  """アプリの全レコードをJSONおよびTSVファイルにエクスポート"""
+def export_all_records(appid, api_token, base_dir, subdomain, get_all=False):
+  """アプリの全レコードをJSONおよびTSVファイルにエクスポート
+  
+  Args:
+      appid: アプリID
+      api_token: APIトークン
+      base_dir: 出力先ディレクトリ
+      subdomain: サブドメイン
+      get_all: Trueの場合は全レコードを取得、Falseの場合は500件まで取得（デフォルトFalse）
+  """
   url = f"https://{subdomain}.cybozu.com/k/v1/records.json"
   headers = {"X-Cybozu-API-Token": api_token}
 
   all_records = []
   offset = 0
   limit = 100
+  max_records = float('inf') if get_all else 500  # get_allがFalseの場合は500件まで
 
   while True:
     params = {
@@ -805,6 +814,10 @@ def export_all_records(appid, api_token, base_dir, subdomain):
         break
 
       all_records.extend(records)
+      if len(all_records) >= max_records:  # 最大レコード数に達したら終了
+        all_records = all_records[:max_records]  # 500件に切り詰める
+        break
+
       offset += limit
 
     except requests.exceptions.RequestException as e:
