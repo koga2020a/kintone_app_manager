@@ -21,12 +21,15 @@ kintone のグループ管理を行うためのコマンドラインツールで
 pip install requests pandas openpyxl pyyaml
 ```
 
-2. 設定ファイル `config_UserAccount.yaml` を作成します：
+2. 設定ファイル `.kintone.env` を作成します：
 
 ```yaml
 subdomain: "your-subdomain"
 username: "your-username"
 password: "your-password"
+app_tokens:
+  "1": "token-for-app-1"
+  "2": "token-for-app-2"
 ```
 
 ## 使い方
@@ -103,12 +106,15 @@ python group_cli.py --search set  # "set"をキーワードとしてユーザー
 
 ## 設定ファイル
 
-`config_UserAccount.yaml` の形式：
+`.kintone.env` の形式：
 
 ```yaml
 subdomain: "your-subdomain"    # kintoneのサブドメイン（example.kintone.com の example 部分）
 username: "your-username"      # 管理者権限を持つユーザーのログイン名
 password: "your-password"      # パスワード
+app_tokens:                    # アプリIDとAPIトークンのマッピング
+  "1": "token-for-app-1"
+  "2": "token-for-app-2"
 ```
 
 ## 注意事項
@@ -116,7 +122,8 @@ password: "your-password"      # パスワード
 - 管理者権限を持つユーザーの認証情報が必要です
 - グループの設定を変更する場合は、十分に注意して実行してください
 - パスワードなどの認証情報は、安全に管理してください
-- 動的グループのグループコードは指定できません。指定した場合、"動的グループのグループコード（code：・・・）は指定できません。静的グループのグループコードを指定してください。"というエラーが発生します
+- 動的グループのグループコードは指定できません
+- Excelファイルが開かれている状態での実行はエラーとなります
 
 ## エラー対応
 
@@ -131,6 +138,10 @@ password: "your-password"      # パスワード
 3. 設定ファイルの読み込みエラー
    - 設定ファイルのパスが正しいか、ファイルが存在するか確認してください
    - YAML形式が正しいか確認してください
+
+4. Excelファイルの操作エラー
+   - 出力先のExcelファイルが開かれていないか確認してください
+   - 十分なディスク容量があるか確認してください
 
 ## ライセンス
 
