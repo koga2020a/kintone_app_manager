@@ -99,7 +99,9 @@ def load_app_settings(app_dir, app_id):
         f"{app_id}_app_notifications.yaml",
         f"{app_id}_customize.yaml",
         f"{app_id}_plugins.yaml",
-        f"{app_id}_graphs.yaml"
+        f"{app_id}_graphs.yaml",
+        f"{app_id}_general_notifications.yaml",
+        f"{app_id}_record_notifications.yaml"
     ]
     
     for file_name in files_to_load:
@@ -145,7 +147,7 @@ def extract_app_summary(app_id, app_name, settings):
         "has_mobile_customize": bool(settings.get("customize", {}).get("mobile", {}).get("js", [])),
         "plugin_count": len(settings.get("plugins", {}).get("desktop", {}).get("plugins", [])),
         "has_actions": bool(settings.get("actions", {}).get("actions", [])),
-        "has_notifications": bool(settings.get("app_notifications", {}).get("notifications", [])),
+        "has_notifications": bool(settings.get("record_notifications", {}).get("notifications", [])) or bool(settings.get("general_notifications", {}).get("notifications", [])),
         "has_graphs": bool(settings.get("graphs", {}).get("reports", [])),
     }
     

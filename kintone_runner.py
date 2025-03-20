@@ -53,6 +53,12 @@ OUTPUT_FILE_INFO = {
             "description": "アプリの全体設定一覧表",
             "command": "summary",
             "args": "--output [ファイル名] (省略時は自動生成)"
+        },
+        {
+            "name": "[アプリID]_notifications_[日時].xlsx",
+            "description": "アプリの通知設定（一般・レコード・リマインダー）情報",
+            "command": "notifications",
+            "args": "--id [アプリID] (省略時は全アプリ対象)"
         }
     ],
     "csv": [
@@ -591,6 +597,130 @@ def generate_acl_excel(config, logger, app_id=None):
         else:
             return False
 
+# 通知設定をExcelに出力
+def generate_notifications_excel(config, logger, app_id=None):
+    """
+    kintone_get_appjson の notifications_to_excel.py を使用して通知設定をExcelに変換する
+    
+    Args:
+        config (dict): 設定情報
+        logger (Logger): ロガーオブジェクト
+        app_id (int, optional): アプリID
+    
+    Returns:
+        str: 生成されたExcelファイルのパス、または失敗した場合はFalse
+    """
+    logger.info("通知設定のExcel変換を開始します")
+    
+    script_path = APPJSON_DIR / "notifications_to_excel.py"
+    
+    if not script_path.exists():
+        logger.error(f"スクリプトファイルが見つかりません: {script_path}")
+        return False
+    
+    # app_tokensからアプリIDとAPIトークンを取得
+    app_tokens = config.get('app_tokens', {})
+    logger.info(f"app_tokens: {app_tokens}")
+    
+    if app_id:
+        # 特定のアプリIDが指定された場合
+        app_id_str = str(app_id)
+        app_id_int = int(app_id)
+        
+        # 文字列キーと整数キーの両方をチェック
+        if app_id_str in app_tokens:
+            pass
+        elif app_id_int in app_tokens:
+            pass
+        else:
+            logger.error(f"アプリID {app_id} のAPIトークンが設定されていません")
+            return False
+            
+        # [app_id]_ で始まるディレクトリを探す
+        output_dir = find_existing_directory(OUTPUT_DIR, str(app_id))
+        
+        if not output_dir:
+            logger.error(f"アプリID {app_id} に対応するディレクトリが見つかりません")
+            return False
+        
+        output_file = output_dir / f"{app_id}_notifications.xlsx"
+        
+        cmd = [
+            sys.executable,
+            str(script_path),
+            str(app_id),
+            "--output", str(output_file)
+        ]
+        
+        try:
+            logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            logger.info(f"アプリID {app_id} の通知設定を {output_file} に出力しました")
+            logger.debug(f"出力: {result.stdout}")
+            return str(output_file)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"通知設定のExcel変換中にエラーが発生しました: {e}")
+            logger.error(f"標準出力: {e.stdout}")
+            logger.error(f"標準エラー: {e.stderr}")
+            log_error_to_file(
+                logger, 
+                e, 
+                command=cmd, 
+                stdout=e.stdout, 
+                stderr=e.stderr, 
+                context=f"アプリID {app_id} の通知設定のExcel変換"
+            )
+            return False
+    else:
+        # 全てのアプリを処理
+        success = True
+        generated_files = []
+        
+        for app_id in app_tokens.keys():
+            # [app_id]_ で始まるディレクトリを探す
+            output_dir = find_existing_directory(OUTPUT_DIR, str(app_id))
+            
+            if not output_dir:
+                logger.error(f"アプリID {app_id} に対応するディレクトリが見つかりません")
+                success = False
+                continue
+            
+            output_file = output_dir / f"{app_id}_notifications.xlsx"
+            
+            cmd = [
+                sys.executable,
+                str(script_path),
+                str(app_id),
+                "--output", str(output_file)
+            ]
+            
+            try:
+                logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                logger.info(f"アプリID {app_id} の通知設定を {output_file} に出力しました")
+                logger.debug(f"出力: {result.stdout}")
+                generated_files.append(str(output_file))
+            except subprocess.CalledProcessError as e:
+                logger.error(f"アプリID {app_id} の通知設定のExcel変換中にエラーが発生しました: {e}")
+                logger.error(f"標準出力: {e.stdout}")
+                logger.error(f"標準エラー: {e.stderr}")
+                log_error_to_file(
+                    logger, 
+                    e, 
+                    command=cmd, 
+                    stdout=e.stdout, 
+                    stderr=e.stderr, 
+                    context=f"アプリID {app_id} の通知設定のExcel変換"
+                )
+                success = False
+        
+        if success and generated_files:
+            return generated_files
+        elif generated_files:
+            return generated_files
+        else:
+            return False
+
 # ディレクトリ操作関数
 def prepare_directories():
     """
@@ -848,6 +978,10 @@ def main():
     remove_parser = group_subparsers.add_parser('remove', help='ユーザーをグループから削除')
     remove_parser.add_argument('user', help='ユーザーコード')
     
+    # 通知設定Excel生成コマンド
+    notifications_parser = subparsers.add_parser('notifications', help='アプリの通知設定をExcelに変換（出力: [アプリID]_notifications.xlsx）')
+    notifications_parser.add_argument('--id', type=int, help='変換するアプリID')
+    
     # 全機能実行コマンド
     subparsers.add_parser('all', help='すべての機能を順番に実行（複数の出力ファイルが生成されます）')
     
@@ -1008,6 +1142,16 @@ def main():
             if result:
                 print(f"ユーザー {args.user} をグループから削除しました")
                 
+    elif args.command == 'notifications':
+        result = generate_notifications_excel(config, logger, args.id)
+        if result:
+            if isinstance(result, list):
+                print("以下のファイルに通知設定を出力しました:")
+                for file in result:
+                    print(f"- {file}")
+            else:
+                print(f"通知設定を {result} に出力しました")
+            
     elif args.command == 'all':
         # すべての機能を順番に実行
         logger.info("すべての機能を順番に実行します")
@@ -1048,6 +1192,26 @@ def main():
                 logger.warning("処理を続行します")
         else:
             logger.warning(f"スクリプトファイル {script_path} が見つからないため、アプリ設定一覧表の生成をスキップします")
+        
+        # 5. 通知設定のExcel変換
+        notifications_result = generate_notifications_excel(config, logger)
+        if notifications_result:
+            if isinstance(notifications_result, list):
+                print("以下のファイルに通知設定を出力しました:")
+                for file in notifications_result:
+                    print(f"- {file}")
+            else:
+                print(f"通知設定を {notifications_result} に出力しました")
+        
+        # 6. 通知設定のExcel変換
+        notifications_result = generate_notifications_excel(config, logger)
+        if notifications_result:
+            if isinstance(notifications_result, list):
+                print("以下のファイルに通知設定を出力しました:")
+                for file in notifications_result:
+                    print(f"- {file}")
+            else:
+                print(f"通知設定を {notifications_result} に出力しました")
     
     # allコマンドの場合のみバックアップと日時部分の除去を実行
     if args.command == 'all':

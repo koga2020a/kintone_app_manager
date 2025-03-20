@@ -943,6 +943,7 @@ def download_app_data(appid, api_token, base_dir, js_dir, json_dir, subdomain, u
     "app_acl": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/acl.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
     "actions": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/actions.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
     "graphs": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/reports.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+    "general_notifications": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/notifications/general.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
   }
 
   js_info = []
