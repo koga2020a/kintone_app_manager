@@ -296,8 +296,8 @@ def get_app_json(config, logger, app_id=None):
     app_tokens = config.get('app_tokens', {})
     
     # デバッグ用
-    logger.info(f"app_tokens: {app_tokens}")
-    logger.info(f"app_tokens keys type: {[type(k) for k in app_tokens.keys()]}")
+    logger.info(f"app_tokens: {dict((k, v[:4] + '*'*(len(v)-8) + v[-4:]) for k,v in app_tokens.items())}")
+    #logger.info(f"app_tokens keys type: {[type(k) for k in app_tokens.keys()]}")
     
     if app_id:
         # 特定のアプリIDが指定された場合
