@@ -152,6 +152,10 @@ def create_notification_excel(app_id, general_data, record_data, reminder_data, 
     # Excelワークブックを作成
     wb = Workbook()
     
+    # デフォルトのSheet1を削除
+    if "Sheet" in wb.sheetnames:
+        wb.remove(wb["Sheet"])
+    
     # スタイル定義
     header_font = Font(bold=True, size=11)
     header_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
@@ -262,16 +266,19 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
         # グループ間の空白
         row_idx += 1
     
-    # 列幅の調整
-    ws.column_dimensions["A"].width = 5    # No.
-    ws.column_dimensions["B"].width = 25   # ユーザー名
-    ws.column_dimensions["C"].width = 30   # メールアドレス
+    '''     # 列幅の調整
+    ws.column_dimensions["A"].width = 22    # No.
+    ws.column_dimensions["B"].width = 25   # ユーザー名s
+    ws.column_dimensions["C"].width = 30   # メールアドレス '''
     
     return row_idx
 
 def create_general_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes):
     """一般通知設定のシートを作成"""
     ws = wb.create_sheet(title="一般通知設定")
+    
+    # A列の幅を22に設定
+    ws.column_dimensions["A"].width = 22
     
     # ヘッダー行 - フィールドタイプ列を追加
     headers = ["No.", "通知先タイプ", "フィールドタイプ", "通知先", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
@@ -390,6 +397,9 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
 def create_record_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes):
     """レコード通知設定のシートを作成"""
     ws = wb.create_sheet(title="レコード通知設定")
+    
+    # A列の幅を22に設定
+    ws.column_dimensions["A"].width = 22
     
     # ヘッダー行 - フィールドタイプ列を追加
     headers = ["No.", "通知先タイプ", "フィールドタイプ", "通知先", "通知条件", "条件内容"]
@@ -551,6 +561,9 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
 def create_reminder_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes):
     """リマインダー通知設定のシートを作成"""
     ws = wb.create_sheet(title="リマインダー通知設定")
+    
+    # A列の幅を22に設定
+    ws.column_dimensions["A"].width = 22
     
     # ヘッダー行 - フィールドタイプ列を追加
     headers = ["No.", "リマインダー名", "通知先タイプ", "フィールドタイプ", "通知先", "日時フィールド", "条件", "通知タイミング"]
