@@ -342,12 +342,12 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
             type_jp,  # 通知先タイプ
             field_type,  # フィールドタイプ - 新しい列
             entity_code,  # 通知先
-            "はい" if notify.get("includeSubs", False) else "いいえ",  # サブグループ含む
-            "はい" if notify.get("recordAdded", False) else "いいえ",  # レコード追加
-            "はい" if notify.get("recordEdited", False) else "いいえ",  # レコード編集
-            "はい" if notify.get("commentAdded", False) else "いいえ",  # コメント追加
-            "はい" if notify.get("statusChanged", False) else "いいえ",  # ステータス変更
-            "はい" if notify.get("fileImported", False) else "いいえ",  # ファイル読込
+            "●" if notify.get("includeSubs", False) else "",  # サブグループ含む
+            "●" if notify.get("recordAdded", False) else "",  # レコード追加
+            "●" if notify.get("recordEdited", False) else "",  # レコード編集
+            "●" if notify.get("commentAdded", False) else "",  # コメント追加
+            "●" if notify.get("statusChanged", False) else "",  # ステータス変更
+            "●" if notify.get("fileImported", False) else "",  # ファイル読込
         ]
         
         # 行の背景色を交互に設定
