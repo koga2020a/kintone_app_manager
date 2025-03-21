@@ -361,81 +361,182 @@ class ExcelExporter:
     self.logger.info("Excelファイルのフォーマットを設定中...")
     
     wb = load_workbook(self.output_file)
+    sheets = ['アクティブ', '停止中']
+
+    # 単位変換：px → 文字数（openpyxlでは幅は文字数）
+    def px_to_char(px):
+        return px / 7
+
+    # ヘッダー行の基本スタイル
+    header_fill = PatternFill(start_color='243C5C', end_color='243C5C', fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF')
     
+    # 列F～Iのヘッダー背景色
+    fg_fill = PatternFill(start_color='4C5D3C', end_color='4C5D3C', fill_type='solid')
+
+    # 定数として各列の列記号を定義
+    COLUMN_USER_ID = 'A'       # ユーザーID
+    COLUMN_DISCREPANCY = 'B'    # 相違
+    COLUMN_STATUS = 'C'         # ステータス
+    COLUMN_LOGIN_NAME = 'D'     # ログイン名
+    COLUMN_NAME = 'E'           # 氏名
+    COLUMN_EMAIL = 'F'          # メールアドレス
+    COLUMN_LAST_ACCESS = 'G'    # 最終アクセス日
+    COLUMN_DAYS_SINCE = 'H'     # 経過日数
+    COLUMN_GROUPS = 'I'         # 所属グループ一覧
+
+    # アクティブと停止中シートのフォーマット
+    for sheet in sheets:
+        self.logger.info(f"{sheet}シートのフォーマットを設定中...")
+        ws = wb[sheet]
+
+        # ヘッダー行（1行目）の各セルに背景色とフォントを設定（A～I列）
+        for col in [COLUMN_USER_ID, COLUMN_DISCREPANCY, COLUMN_STATUS, COLUMN_LOGIN_NAME,
+                    COLUMN_NAME, COLUMN_EMAIL, COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE, COLUMN_GROUPS]:
+            cell = ws[f'{col}1']
+            cell.fill = header_fill
+            cell.font = header_font
+
+        # 列幅の設定（ピクセル値を文字数に変換）
+        column_widths_px = {
+            COLUMN_USER_ID: 180,     # ユーザーID
+            COLUMN_DISCREPANCY: 80,   # 相違
+            COLUMN_STATUS: 80,       # ステータス
+            COLUMN_LOGIN_NAME: 270,  # ログイン名
+            COLUMN_NAME: 270,        # 氏名
+            COLUMN_EMAIL: 334,       # メールアドレス
+            COLUMN_LAST_ACCESS: 160, # 最終アクセス日
+            COLUMN_DAYS_SINCE: 60,   # 経過日数
+            COLUMN_GROUPS: 1195      # 所属グループ一覧
+        }
+        for col, px in column_widths_px.items():
+            ws.column_dimensions[col].width = px_to_char(px)
+
+        # グループごとの列をJ列以降に設定（幅は15）
+        start_col_letter = 'J'
+        start_col_num = column_index_from_string(start_col_letter)
+        for i, group in enumerate(self.group_names, start=start_col_num):
+            col_letter = get_column_letter(i)
+            ws.column_dimensions[col_letter].width = 15
+
+        # 列F～I（メールアドレス、最終アクセス日、経過日数、所属グループ一覧）のヘッダーに別背景色を設定
+        for col_letter in [COLUMN_EMAIL, COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE, COLUMN_GROUPS]:
+            cell = ws[f'{col_letter}1']
+            cell.fill = fg_fill
+
+        # データ行（2行目以降）のセル配置を設定
+        exclude_columns = [COLUMN_LOGIN_NAME, COLUMN_NAME, COLUMN_EMAIL]
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+            for cell in row:
+                if cell.column_letter in [COLUMN_USER_ID, COLUMN_DISCREPANCY, COLUMN_STATUS,
+                                          COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE]:
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                elif cell.column_letter in exclude_columns:
+                    cell.alignment = Alignment(horizontal='left', vertical='center')
+                else:
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+
+        # 「Administrators」グループに所属している場合は、氏名（E列）を太字にする
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+            group_cell = row[column_index_from_string(COLUMN_GROUPS) - 1]
+            if group_cell.value:
+                groups = [g.strip() for g in group_cell.value.split(',')]
+                if 'Administrators' in groups:
+                    name_cell = row[column_index_from_string(COLUMN_NAME) - 1]
+                    name_cell.font = Font(bold=True)
+
+        # 所属グループ一覧内に「Administrators」が含まれている場合は除去
+        for row in ws.iter_rows(min_row=2, min_col=column_index_from_string(COLUMN_GROUPS),
+                                max_col=column_index_from_string(COLUMN_GROUPS), max_row=ws.max_row):
+            for cell in row:
+                if cell.value and 'Administrators' in cell.value:
+                    cell.value = cell.value.replace('Administrators', '').strip()
+                    if cell.value.endswith(','):
+                        cell.value = cell.value[:-1].strip()
+
+        # 最終アクセス日（G列）と経過日数（H列）は中央寄せ（念のため再設定）
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            last_access_cell = row[column_index_from_string(COLUMN_LAST_ACCESS) - 1]
+            days_cell = row[column_index_from_string(COLUMN_DAYS_SINCE) - 1]
+            last_access_cell.alignment = Alignment(horizontal='center', vertical='center')
+            days_cell.alignment = Alignment(horizontal='center', vertical='center')
+
+        self.logger.info(f"{sheet}シートのフォーマット設定が完了しました。")
+
     # グループ情報シートのフォーマット
     if 'グループ情報' in wb.sheetnames:
-      ws = wb['グループ情報']
-      self.logger.info("グループ情報シートのフォーマットを設定中...")
-      
-      # カラム幅の設定（A～E列）
-      column_widths = {
-        'A': 15,  # ユーザーID
-        'B': 30,  # ログイン名
-        'C': 20,  # 氏名
-        'D': 35,  # メールアドレス
-        'E': 10   # 停止中
-      }
-      for col, width in column_widths.items():
-        ws.column_dimensions[col].width = width
-      
-      # 背景・フォント設定
-      group_title_fill = PatternFill(start_color='5B9BD5', end_color='5B9BD5', fill_type='solid')
-      group_title_font = Font(bold=True, color='FFFFFF')
-      
-      header_fill = PatternFill(start_color='243C5C', end_color='243C5C', fill_type='solid')
-      header_font = Font(bold=True, color='FFFFFF')
-      
-      # 枠線（太線）の設定
-      thick_side = Side(border_style='thick', color="000000")
-      
-      # シート全体を走査して、各セットごとにフォーマットを適用する
-      row = 1
-      while row <= ws.max_row:
-        cell_val = ws.cell(row=row, column=1).value
-        if isinstance(cell_val, str) and cell_val.startswith("グループ:"):
-          block_start = row
-          # --- グループ名行の背景設定 ---
-          for col in range(1, 6):  # A～E列
-            cell = ws.cell(row=row, column=col)
-            cell.fill = group_title_fill
-            cell.font = group_title_font
-          row += 1
-          
-          # --- ヘッダー行の背景設定 ---
-          if row <= ws.max_row and ws.cell(row=row, column=1).value == "ユーザーID":
-            for col in range(1, 6):  # A～E列
-              cell = ws.cell(row=row, column=col)
-              cell.fill = header_fill
-              cell.font = header_font
-              cell.alignment = Alignment(horizontal='center')  # ヘッダーを中央揃え
-            row += 1
-          else:
-            continue
-          
-          # --- セットのデータ行の最終行を検出 ---
-          data_start = row
-          while row <= ws.max_row and ws.cell(row=row, column=1).value not in [None, ""]:
-            # 停止中列を中央揃えに
-            ws.cell(row=row, column=5).alignment = Alignment(horizontal='center')
-            row += 1
-          block_end = row - 1
-          
-          # --- ブロック全体に太線の枠線を設定 ---
-          for r in range(block_start, block_end + 1):
-            for c in range(1, 6):  # A～E列
-              cell = ws.cell(row=r, column=c)
-              new_border = Border(
-                left=thick_side if c == 1 else cell.border.left,
-                right=thick_side if c == 5 else cell.border.right,
-                top=thick_side if r == block_start else cell.border.top,
-                bottom=thick_side if r == block_end else cell.border.bottom
-              )
-              cell.border = new_border
-          row += 1
-        else:
-          row += 1
-      
-      self.logger.info("グループ情報シートのフォーマット設定が完了しました。")
+        ws = wb['グループ情報']
+        self.logger.info("グループ情報シートのフォーマットを設定中...")
+        
+        # カラム幅の設定（A～E列）
+        column_widths = {
+            'A': 15,  # ユーザーID
+            'B': 30,  # ログイン名
+            'C': 20,  # 氏名
+            'D': 35,  # メールアドレス
+            'E': 10   # 停止中
+        }
+        for col, width in column_widths.items():
+            ws.column_dimensions[col].width = width
+        
+        # 背景・フォント設定
+        group_title_fill = PatternFill(start_color='5B9BD5', end_color='5B9BD5', fill_type='solid')
+        group_title_font = Font(bold=True, color='FFFFFF')
+        
+        header_fill = PatternFill(start_color='243C5C', end_color='243C5C', fill_type='solid')
+        header_font = Font(bold=True, color='FFFFFF')
+        
+        # 枠線（太線）の設定
+        thick_side = Side(border_style='thick', color="000000")
+        
+        # シート全体を走査して、各セットごとにフォーマットを適用する
+        row = 1
+        while row <= ws.max_row:
+            cell_val = ws.cell(row=row, column=1).value
+            if isinstance(cell_val, str) and cell_val.startswith("グループ:"):
+                block_start = row
+                # グループ名行の背景設定
+                for col in range(1, 6):  # A～E列
+                    cell = ws.cell(row=row, column=col)
+                    cell.fill = group_title_fill
+                    cell.font = group_title_font
+                row += 1
+                
+                # ヘッダー行の背景設定
+                if row <= ws.max_row and ws.cell(row=row, column=1).value == "ユーザーID":
+                    for col in range(1, 6):  # A～E列
+                        cell = ws.cell(row=row, column=col)
+                        cell.fill = header_fill
+                        cell.font = header_font
+                        cell.alignment = Alignment(horizontal='center')  # ヘッダーを中央揃え
+                    row += 1
+                else:
+                    continue
+                
+                # セットのデータ行の最終行を検出
+                data_start = row
+                while row <= ws.max_row and ws.cell(row=row, column=1).value not in [None, ""]:
+                    # 停止中列を中央揃えに
+                    ws.cell(row=row, column=5).alignment = Alignment(horizontal='center')
+                    row += 1
+                block_end = row - 1
+                
+                # ブロック全体に太線の枠線を設定
+                for r in range(block_start, block_end + 1):
+                    for c in range(1, 6):  # A～E列
+                        cell = ws.cell(row=r, column=c)
+                        new_border = Border(
+                            left=thick_side if c == 1 else cell.border.left,
+                            right=thick_side if c == 5 else cell.border.right,
+                            top=thick_side if r == block_start else cell.border.top,
+                            bottom=thick_side if r == block_end else cell.border.bottom
+                        )
+                        cell.border = new_border
+                row += 1
+            else:
+                row += 1
+        
+        self.logger.info("グループ情報シートのフォーマット設定が完了しました。")
     
     wb.save(self.output_file)
     self.logger.info(f"Excelファイル '{self.output_file}' のフォーマットを設定しました。")
