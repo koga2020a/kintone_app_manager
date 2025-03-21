@@ -849,26 +849,30 @@ def create_excel_report(appid, base_dir):
         with open(field_codes_yaml_path, 'r', encoding='utf-8') as f:
             field_codes_usage = yaml.safe_load(f) or {}
 
-    # TSVファイルを開いて、各行のフィールドコードに対応する使用箇所情報をExcelのBD列に設定する
-    with open(tsv_filename, 'r', encoding='utf-8') as f:
-        tsv_reader = csv.reader(f, delimiter='\t')
-        # 必要に応じてヘッダー行がある場合は読み飛ばす
-        header = next(tsv_reader, None)
-        for row_idx, row in enumerate(tsv_reader, 2):
-            # BA列（フィールドコード）は、Excelの列番号に対応させるために変換（列番号は1始まり）
-            ba_col_index = column_index_from_string('BA')  # 53 などの数字が返る
-            if len(row) >= ba_col_index:
-                field_code = row[ba_col_index - 1]  # リストは0始まりなので
-                if field_code in field_codes_usage:
-                    usage_info = []
-                    for js_file, lines in field_codes_usage[field_code].items():
-                        usage_info.append(f"{js_file}（{', '.join(map(str, lines))}行目）")
-                    usage_text = '\n'.join(usage_info)
-                    worksheet.cell(row=row_idx, column=column_index_from_string('BD'), value=usage_text)
-
     # -----------------------------
     # その後、他のTSV情報をセルに配置する処理（例：既存の formatter.set_by_out02_tsv の呼び出し）
     formatter.set_by_out02_tsv(tsv_filename)
+    
+    # -----------------------------
+    # BA列のフィールドコードに基づいてBD列にJS使用箇所情報を設定
+    # -----------------------------
+    for row in range(3, worksheet.max_row + 1):  # 3行目からデータ行を処理（ヘッダーは2行目）
+        field_code_cell = worksheet.cell(row=row, column=column_index_from_string('BA'))
+        field_code = field_code_cell.value
+        
+        if field_code and field_code in field_codes_usage:
+            # フィールドコードがJSで使用されている場合
+            usage_info = field_codes_usage[field_code]
+            # 使用箇所情報をフォーマット
+            usage_text = ""
+            for js_file, line_numbers in usage_info.items():
+                usage_text += f"{js_file}: {', '.join(map(str, line_numbers))}\n"
+            
+            # BD列に設定
+            bd_cell = worksheet.cell(row=row, column=column_index_from_string('BD'))
+            bd_cell.value = usage_text.strip()
+            bd_cell.font = formatter.font
+    
     formatter.save()
     print(f"Excelレポートを作成しました: {excel_filename}")
 
@@ -1084,14 +1088,14 @@ def download_app_data(appid, api_token, base_dir, js_dir, json_dir, subdomain, u
 
     # JavaScriptファイルのダウンロード処理が完了した後に追加
     # フィールドコードの使用箇所を解析
-    field_codes_map = scan_directory_for_field_codes_with_lines(js_dir)
+    """     field_codes_map = scan_directory_for_field_codes_with_lines(js_dir)
     
     # フィールドコードの使用箇所情報をYAMLファイルとして保存
     field_codes_yaml = base_dir / f"{appid}_field_codes_usage_at_javascript.yaml"
     with open(field_codes_yaml, 'w', encoding='utf-8') as f:
         yaml.dump(field_codes_map, f, allow_unicode=True, sort_keys=False)
     
-    print(f"フィールドコードの使用箇所情報を {field_codes_yaml} に保存しました。")
+    print(f"フィールドコードの使用箇所情報を {field_codes_yaml} に保存しました。") """
 
 def extract_field_codes_with_lines(filepath):
     """JavaScriptファイルからフィールドコードの使用箇所を抽出"""
