@@ -5,9 +5,10 @@ from getpass import getpass
 from typing import List, Dict, Any
 
 import requests
+
 import pandas as pd
 from openpyxl import load_workbook
-from openpyxl.styles import Alignment, PatternFill, Font
+from openpyxl.styles import Alignment, PatternFill, Font, Border, Side
 from openpyxl.utils import column_index_from_string, get_column_letter
 import logging
 import yaml
@@ -280,179 +281,162 @@ class ExcelExporter:
     self.group_names = group_names
     self.output_file = output_file
     self.logger = logger
+    self.group_data = {}  # グループ情報を保持する辞書を追加
+
+  def prepare_group_data(self, client: KintoneClient):
+    """グループごとのユーザー情報を準備"""
+    self.logger.info("グループ情報シート用のデータを準備中...")
+    
+    for group in self.group_names:
+      group_users = []
+      for df in self.dataframes.values():
+        # グループに所属するユーザーを抽出
+        mask = df[group] == '●'
+        users = df[mask][['ユーザーID', 'ログイン名', '氏名', 'メールアドレス', 'ステータス']].copy()
+        
+        if not users.empty:
+          # メールアドレスのドメイン部分を抽出
+          users['domain'] = users['メールアドレス'].str.split('@').str[1]
+          # ドメインでソート
+          users = users.sort_values(['domain', 'メールアドレス'])
+          users = users.drop('domain', axis=1)  # 一時的なドメイン列を削除
+          # 停止中のユーザーに「●」を追加
+          users['停止中'] = users['ステータス'].apply(lambda x: '●' if x == '停止中' else '')
+          group_users.append(users)
+      
+      if group_users:
+        self.group_data[group] = pd.concat(group_users, ignore_index=True)
+      else:
+        self.group_data[group] = pd.DataFrame(columns=['ユーザーID', 'ログイン名', '氏名', 'メールアドレス', '停止中'])
 
   def export_to_excel(self):
     self.logger.info("Excelファイルに出力中...")
+    
     with pd.ExcelWriter(self.output_file, engine='openpyxl') as writer:
+      # 既存シート（アクティブ、停止中）の出力
       for sheet_name, df in self.dataframes.items():
         df.to_excel(writer, sheet_name=sheet_name, index=False)
+      
+      # グループ情報シートを新規作成
+      if self.group_data:
+        sheet_name = 'グループ情報'
+        start_row = 0
+        # シートを追加
+        workbook = writer.book
+        ws = workbook.create_sheet(title=sheet_name)
+        
+        for group_name, df in self.group_data.items():
+          # --- 1. グループ名行 ---
+          ws.cell(row=start_row+1, column=1, value="グループ: " + group_name)
+          start_row += 1
+          
+          # --- 2. ヘッダー行 ---
+          headers = ["ユーザーID", "ログイン名", "氏名", "メールアドレス", "停止中"]
+          for col, header in enumerate(headers, 1):
+            ws.cell(row=start_row+1, column=col, value=header)
+          start_row += 1
+          
+          # --- 3. データ行 ---
+          if not df.empty:
+            for r_idx, row in df.iterrows():
+              ws.cell(row=start_row+1, column=1, value=row['ユーザーID'])
+              ws.cell(row=start_row+1, column=2, value=row['ログイン名'])
+              ws.cell(row=start_row+1, column=3, value=row['氏名'])
+              ws.cell(row=start_row+1, column=4, value=row['メールアドレス'])
+              ws.cell(row=start_row+1, column=5, value=row['停止中'])
+              start_row += 1
+          else:
+            # データがない場合は空行を出力
+            ws.cell(row=start_row+1, column=1, value="(データなし)")
+            start_row += 1
+          
+          # --- 4. セット間に空行を追加 ---
+          start_row += 1
+        
+        writer.sheets[sheet_name] = ws
+    
     self.logger.info(f"Excelファイル '{self.output_file}' を作成しました。")
 
   def format_excel(self):
     self.logger.info("Excelファイルのフォーマットを設定中...")
     
-    # 進捗表示を追加
-    self.logger.info("監査ログの読み込みを開始...")
-    
     wb = load_workbook(self.output_file)
-    sheets = ['アクティブ', '停止中']
-
-    # 監査ログの処理を最適化
-    last_access_dates = {}
-    try:
-        # 監査ログファイルの一括処理
-        audit_files = glob.glob('./audit/*.csv') + [
-            f for f in glob.glob('./audit/*.zip')
-        ]
-        
-        if audit_files:
-            # データフレームのリストを作成
-            audit_df_list = []
-            for file in audit_files:
-                if file.endswith('.zip'):
-                    with zipfile.ZipFile(file, 'r') as zip_ref:
-                        for csv_file in zip_ref.namelist():
-                            if csv_file.endswith('.csv'):
-                                with zip_ref.open(csv_file) as f:
-                                    df = pd.read_csv(f)
-                                    audit_df_list.append(df)
-                else:
-                    df = pd.read_csv(file)
-                    audit_df_list.append(df)
-
-            if audit_df_list:
-                # 全データを結合して処理
-                audit_df = pd.concat(audit_df_list, ignore_index=True)
-                audit_df['Date'] = pd.to_datetime(audit_df['Date'])
-                
-                # ユーザー情報の抽出を効率化
-                mask = audit_df['User Name (account/uid)'].str.contains('/', na=False)
-                valid_records = audit_df[mask].copy()
-                
-                # UIDの抽出を一括処理
-                valid_records['uid'] = valid_records['User Name (account/uid)'].str.extract(r'/([^)]+)')
-                
-                # グループ化して最新の日付を取得
-                latest_access = valid_records.groupby('uid')['Date'].max()
-                
-                # 経過日数の計算
-                now = pd.Timestamp.now()
-                days_since = (now - latest_access).dt.days
-                
-                # 結果を辞書に格納
-                for uid, date in latest_access.items():
-                    last_access_dates[uid] = {
-                        'date': date,
-                        'days_since': days_since[uid]
-                    }
-                
-    except Exception as e:
-        self.logger.error(f"監査ログの読み込みに失敗しました: {e}")
-
-    # 進捗表示を追加
-    self.logger.info(f"監査ログの処理が完了しました。{len(last_access_dates)}件のアクセス記録を取得。")
     
-    # カラム幅の設定（openpyxlでは幅を文字数で指定）
-    def px_to_char(px):
-      return px / 7
-
-    # ヘッダーのフォーマット設定
-    header_fill = PatternFill(start_color='243C5C', end_color='243C5C', fill_type='solid')
-    header_font = Font(bold=True, color='FFFFFF') # 白文字にする場合
-
-    # F列とG列の背景色（ヘッダ行のみ）
-    fg_fill = PatternFill(start_color='4C5D3C', end_color='4C5D3C', fill_type='solid')
-
-    # 定数として列名を定義
-    COLUMN_USER_ID = 'A'
-    COLUMN_DISCREPANCY = 'B'
-    COLUMN_STATUS = 'C'
-    COLUMN_LOGIN_NAME = 'D'
-    COLUMN_NAME = 'E'
-    COLUMN_EMAIL = 'F'
-    COLUMN_LAST_ACCESS = 'G'  # 最終アクセス日
-    COLUMN_DAYS_SINCE = 'H'   # 経過日数
-    COLUMN_GROUPS = 'I'
-
-    for sheet in sheets:
-      self.logger.info(f"{sheet}シートのフォーマットを設定中...")
+    # グループ情報シートのフォーマット
+    if 'グループ情報' in wb.sheetnames:
+      ws = wb['グループ情報']
+      self.logger.info("グループ情報シートのフォーマットを設定中...")
       
-      ws = wb[sheet]
-
-      # ヘッダー行のフォーマット (A列からI列まで)
-      for col in [COLUMN_USER_ID, COLUMN_DISCREPANCY, COLUMN_STATUS, COLUMN_LOGIN_NAME, COLUMN_NAME, COLUMN_EMAIL, COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE, COLUMN_GROUPS]:
-        cell = ws[f'{col}1']
-        cell.fill = header_fill
-        cell.font = header_font
-
-      # 列幅の設定
-      column_widths_px = {
-        COLUMN_USER_ID: 180,     # A列: ユーザーID
-        COLUMN_DISCREPANCY: 80,  # B列: 相違
-        COLUMN_STATUS: 80,       # C列: ステータス
-        COLUMN_LOGIN_NAME: 270,  # D列: ログイン名
-        COLUMN_NAME: 270,        # E列: 氏名
-        COLUMN_EMAIL: 334,       # Fメールアドレス (変更なし)
-        COLUMN_LAST_ACCESS: 160, # G列: 最終アクセス日
-        COLUMN_DAYS_SINCE: 60,   # H列: 経過日数
-        COLUMN_GROUPS: 1195      # I 所属グループ一覧 (変更なし)
+      # カラム幅の設定（A～E列）
+      column_widths = {
+        'A': 15,  # ユーザーID
+        'B': 30,  # ログイン名
+        'C': 20,  # 氏名
+        'D': 35,  # メールアドレス
+        'E': 10   # 停止中
       }
-
-      for col, px in column_widths_px.items():
-        ws.column_dimensions[col].width = px_to_char(px)
-
-      # グループ列の幅を15に設定
-      start_col_letter = 'J' # J列以降
-      start_col_num = column_index_from_string(start_col_letter)
-      for i, group in enumerate(self.group_names, start=start_col_num):
-        col_letter = get_column_letter(i)
-        ws.column_dimensions[col_letter].width = 15 # 適宜調整
-
-      # 列F,G,H,Iの背景色設定（ヘッダ行のみ）
-      for col_letter in [COLUMN_EMAIL, COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE, COLUMN_GROUPS]:
-        cell = ws[f'{col_letter}1']
-        cell.fill = fg_fill
-
-      # セルの中央寄せを設定（「ログイン名」、「氏名」、「メールアドレス」列以外）
-      # 「ログイン名」、「氏名」、「メールアドレス」列は D, E, F
-      exclude_columns = [COLUMN_LOGIN_NAME, COLUMN_NAME, COLUMN_EMAIL]
-      for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
-        for cell in row:
-          if cell.column_letter not in exclude_columns and cell.column_letter not in [COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE] and cell.column_letter != COLUMN_DISCREPANCY:
-            cell.alignment = Alignment(horizontal='center', vertical='center')
-          elif cell.column_letter == COLUMN_DISCREPANCY:
-            cell.alignment = Alignment(horizontal='center', vertical='center')
-          elif cell.column_letter in [COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE]:
-            cell.alignment = Alignment(horizontal='center', vertical='center')
-
-      # 「Administrators」グループのユーザーの「氏名」列を太字に (E列に変更)
-      for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
-        group_list = row[column_index_from_string(COLUMN_GROUPS) - 1].value # 所属グループ一覧 (I列)
-        if group_list and 'Administrators' in [g.strip() for g in group_list.split(',')]:
-          row[column_index_from_string(COLUMN_NAME) - 1].font = Font(bold=True) # E列（氏名）
-
-      # G列に「Administrators」が含まれている場合、文字を消す
-      for row in ws.iter_rows(min_row=2, min_col=column_index_from_string(COLUMN_GROUPS), max_col=column_index_from_string(COLUMN_GROUPS), max_row=ws.max_row):
-        for cell in row:
-          if cell.value and 'Administrators' in cell.value:
-            cell.value = cell.value.replace('Administrators', '').strip()
-            # 余分なカンマやスペースを削除
-            if cell.value.endswith(','):
-              cell.value = cell.value[:-1].strip()
-
-      # 最終アクセス日と経過日数を設定
-      for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-        user_id = str(row[0].value)  # A列のユーザーID
-        if user_id in last_access_dates:
-          row[6].value = last_access_dates[user_id]['date'].strftime('%Y-%m-%d %H:%M:%S')
-          row[7].value = last_access_dates[user_id]['days_since']
+      for col, width in column_widths.items():
+        ws.column_dimensions[col].width = width
+      
+      # 背景・フォント設定
+      group_title_fill = PatternFill(start_color='5B9BD5', end_color='5B9BD5', fill_type='solid')
+      group_title_font = Font(bold=True, color='FFFFFF')
+      
+      header_fill = PatternFill(start_color='243C5C', end_color='243C5C', fill_type='solid')
+      header_font = Font(bold=True, color='FFFFFF')
+      
+      # 枠線（太線）の設定
+      thick_side = Side(border_style='thick', color="000000")
+      
+      # シート全体を走査して、各セットごとにフォーマットを適用する
+      row = 1
+      while row <= ws.max_row:
+        cell_val = ws.cell(row=row, column=1).value
+        if isinstance(cell_val, str) and cell_val.startswith("グループ:"):
+          block_start = row
+          # --- グループ名行の背景設定 ---
+          for col in range(1, 6):  # A～E列
+            cell = ws.cell(row=row, column=col)
+            cell.fill = group_title_fill
+            cell.font = group_title_font
+          row += 1
           
-          # セルの配置を中央に
-          row[6].alignment = Alignment(horizontal='center', vertical='center')
-          row[7].alignment = Alignment(horizontal='center', vertical='center')
-
-      self.logger.info(f"{sheet}シートのフォーマット設定が完了しました。")
-
+          # --- ヘッダー行の背景設定 ---
+          if row <= ws.max_row and ws.cell(row=row, column=1).value == "ユーザーID":
+            for col in range(1, 6):  # A～E列
+              cell = ws.cell(row=row, column=col)
+              cell.fill = header_fill
+              cell.font = header_font
+              cell.alignment = Alignment(horizontal='center')  # ヘッダーを中央揃え
+            row += 1
+          else:
+            continue
+          
+          # --- セットのデータ行の最終行を検出 ---
+          data_start = row
+          while row <= ws.max_row and ws.cell(row=row, column=1).value not in [None, ""]:
+            # 停止中列を中央揃えに
+            ws.cell(row=row, column=5).alignment = Alignment(horizontal='center')
+            row += 1
+          block_end = row - 1
+          
+          # --- ブロック全体に太線の枠線を設定 ---
+          for r in range(block_start, block_end + 1):
+            for c in range(1, 6):  # A～E列
+              cell = ws.cell(row=r, column=c)
+              new_border = Border(
+                left=thick_side if c == 1 else cell.border.left,
+                right=thick_side if c == 5 else cell.border.right,
+                top=thick_side if r == block_start else cell.border.top,
+                bottom=thick_side if r == block_end else cell.border.bottom
+              )
+              cell.border = new_border
+          row += 1
+        else:
+          row += 1
+      
+      self.logger.info("グループ情報シートのフォーマット設定が完了しました。")
+    
     wb.save(self.output_file)
     self.logger.info(f"Excelファイル '{self.output_file}' のフォーマットを設定しました。")
 
@@ -530,6 +514,7 @@ def main():
 
   # Excelへのエクスポートとフォーマット
   exporter = ExcelExporter(dataframes, group_names, args.output, logger)
+  exporter.prepare_group_data(client)
   exporter.export_to_excel()
   exporter.format_excel()
 

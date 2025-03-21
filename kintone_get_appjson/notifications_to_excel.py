@@ -231,6 +231,12 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
         group_name = group_info.get('name', '不明なグループ')
         members = group_info.get('users', [])
         
+        # メンバーをメールアドレスのドメインでソート
+        members = sorted(members, key=lambda x: (
+            x.get('email', '').split('@')[1] if '@' in x.get('email', '') else '',
+            x.get('email', '')
+        ))
+        
         # グループ名の行
         ws.cell(row=row_idx, column=1).value = f"グループ: {group_name} ({group_code})"
         ws.cell(row=row_idx, column=1).font = Font(bold=True)
@@ -249,11 +255,20 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
         row_idx += 1
         
         # メンバー行
+        current_domain = None
         for i, user in enumerate(members, 1):
+            email = user.get('email', '')
+            domain = email.split('@')[1] if '@' in email else ''
+            
+            # ドメインが変わったら空行を挿入
+            if domain and domain != current_domain and current_domain is not None:
+                row_idx += 1
+            current_domain = domain
+            
             row_data = [
                 i,
                 user.get('username', '不明'),
-                user.get('email', '')
+                email
             ]
             
             for col_idx, value in enumerate(row_data, 1):
@@ -265,11 +280,6 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
         
         # グループ間の空白
         row_idx += 1
-    
-    '''     # 列幅の調整
-    ws.column_dimensions["A"].width = 22    # No.
-    ws.column_dimensions["B"].width = 25   # ユーザー名s
-    ws.column_dimensions["C"].width = 30   # メールアドレス '''
     
     return row_idx
 

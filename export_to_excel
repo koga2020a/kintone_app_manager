@@ -1,0 +1,80 @@
+from openpyxl.styles import Alignment, PatternFill, Font, Border, Side
+
+def export_to_excel(self):
+    self.logger.info("Excelファイルに出力中...")
+    
+    with pd.ExcelWriter(self.output_file, engine='openpyxl') as writer:
+      // ... existing code ...
+      
+      # グループ情報シートを新規作成
+      if self.group_data:
+        sheet_name = 'グループ情報'
+        start_row = 0
+        # シートを追加
+        workbook = writer.book
+        ws = workbook.create_sheet(title=sheet_name)
+        
+        for group_name, df in self.group_data.items():
+          // ... existing code ...
+          # --- 3. データ行 ---
+          if not df.empty:
+            df = df.copy()
+            df['所属ユーザ一覧'] = df.apply(
+              lambda row: ' '.join([str(row.get(col, '')).strip() for col in ['ログイン名', '氏名', 'メールアドレス', '停止中'] if row.get(col)]),
+              axis=1
+            )
+            export_df = df[['ユーザーID', '所属ユーザ一覧']]
+            for r_idx, row in export_df.iterrows():
+              ws.cell(row=start_row+1, column=1, value=row['ユーザーID'])
+              ws.cell(row=start_row+1, column=2, value=row['所属ユーザ一覧'])
+              start_row += 1
+          else:
+            ws.cell(row=start_row+1, column=1, value="(データなし)")
+            start_row += 1
+          
+          // ... existing code ...
+        
+        writer.sheets[sheet_name] = ws
+    
+    self.logger.info(f"Excelファイル '{self.output_file}' を作成しました。")
+
+def format_excel(self):
+    self.logger.info("Excelファイルのフォーマットを設定中...")
+    
+    wb = load_workbook(self.output_file)
+    
+    // ... existing code ...
+    
+    # グループ情報シートのフォーマット
+    if 'グループ情報' in wb.sheetnames:
+      ws = wb['グループ情報']
+      self.logger.info("グループ情報シートのフォーマットを設定中...")
+      
+      // ... existing code ...
+      
+      # シート全体を走査して、各セットごとにフォーマットを適用する
+      row = 1
+      while row <= ws.max_row:
+        cell_val = ws.cell(row=row, column=1).value
+        if isinstance(cell_val, str) and cell_val.startswith("グループ:"):
+          block_start = row
+          // ... existing code ...
+          # --- ブロック全体に太線の枠線を設定 ---
+          for r in range(block_start, block_end + 1):
+            for c in range(1, 3):
+              cell = ws.cell(row=r, column=c)
+              new_border = Border(
+                left=thick_side if c == 1 else cell.border.left,
+                right=thick_side if c == 2 else cell.border.right,
+                top=thick_side if r == block_start else cell.border.top,
+                bottom=thick_side if r == block_end else cell.border.bottom
+              )
+              cell.border = new_border
+          row += 1
+        else:
+          row += 1
+      
+      self.logger.info("グループ情報シートのフォーマット設定が完了しました。")
+    
+    wb.save(self.output_file)
+    self.logger.info(f"Excelファイル '{self.output_file}' のフォーマットを設定しました。") 
