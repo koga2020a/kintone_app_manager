@@ -603,6 +603,21 @@ class ExcelFormatter:
                       bottom_border=True, right_border=True,
                       isBackcolor=False)
 
+      # フィールド種別に応じた詳細設定の記載
+      if len(row) > 4:
+        field_type = row[4]
+        if field_type in ['DROP_DOWN']:
+          # 詳細設定をBC列に記載
+          details = self.get_field_details(row)
+          set_val_font(self.ws[f'BC{i+3}'], details.get('BC', ''))
+
+      # BE列に行の全データを出力
+      set_val_font(self.ws[f'BE{i+3}'], str(row))
+      
+      # BF列にJSON文字列を出力
+      if len(row) > 10:
+        set_val_font(self.ws[f'BF{i+3}'], row[10])
+
     self.get_column_group_arrays()
     L_G = self.get_groups_by_first_char('L')
     G_G = self.get_groups_by_first_char('G')
@@ -744,6 +759,33 @@ class ExcelFormatter:
         new_cell_positions.append(cell)
     return new_cell_positions
 
+  def get_field_details(self, row):
+    """フィールドの詳細設定を取得"""
+    details = {}
+    
+    if row[4] == 'DROP_DOWN' and len(row) > 10:
+        try:
+            # options: の後に続く部分を取得
+            options_str = row[10]
+            # カンマで分割して選択肢を抽出
+            items = options_str.split(',')
+            options = []
+            
+            for item in items:
+                # "sample1: {" のような形式から選択肢を抽出
+                if ': {' in item:
+                    option = item.split(': {')[0].strip()
+                    # options: や index: などの制御項目は除外
+                    if option not in ['options', 'index', 'defaultValue'] and not option.startswith('"'):
+                        options.append(option)
+            
+            if options:
+                details['BC'] = '選択肢: ' + ', '.join(options)
+        except Exception as e:
+            print(f"選択肢の解析エラー: {e}")
+    
+    return details
+
 def create_excel_report(appid, base_dir):
   """Excelレポートを作成"""
   tsv_filename = base_dir / f"{appid}_layout_structured.tsv"
@@ -760,6 +802,14 @@ def create_excel_report(appid, base_dir):
   worksheet.column_dimensions['BA'].width = 25
   worksheet.column_dimensions['BB'].width = 25
 
+  # BC列とBD列の幅を設定
+  worksheet.column_dimensions['BC'].width = 30  # 選択肢リスト用
+  worksheet.column_dimensions['BD'].width = 25  # ルックアップ情報用
+
+  # BE列とBF列の幅を設定（デバッグ用）
+  worksheet.column_dimensions['BE'].width = 50  # 行の全データ用
+  worksheet.column_dimensions['BF'].width = 50  # JSON文字列用
+
   # 白背景の設定
   white_fill = PatternFill(start_color='FFFFFF', end_color='FFFFFF', fill_type="solid")
   for row in range(1, 201):
@@ -775,6 +825,10 @@ def create_excel_report(appid, base_dir):
   formatter.merge_cells_and_set_content('Y2', 'AO2', '備考', alignment="left", bottom_border=True, right_border=True)
   formatter.merge_cells_and_set_content('BA2', 'BA2', 'フィールドコード', alignment="center", bottom_border=True, right_border=True)
   formatter.merge_cells_and_set_content('BB2', 'BB2', 'フィールド種別', alignment="center", bottom_border=True, right_border=True)
+  formatter.merge_cells_and_set_content('BC2', 'BC2', 'ドロップダウン選択肢', alignment="center", bottom_border=True, right_border=True)
+  formatter.merge_cells_and_set_content('BD2', 'BD2', 'ルックアップ設定', alignment="center", bottom_border=True, right_border=True)
+  formatter.merge_cells_and_set_content('BE2', 'BE2', '行データ（全体）', alignment="center", bottom_border=True, right_border=True)
+  formatter.merge_cells_and_set_content('BF2', 'BF2', 'JSON文字列', alignment="center", bottom_border=True, right_border=True)
 
   formatter.set_by_out02_tsv(tsv_filename)
   formatter.save()
