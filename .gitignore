@@ -4,6 +4,7 @@ log/
 logs/
 backup/
 previous_output/
+.venv/
 
 .kintone.env
 .env

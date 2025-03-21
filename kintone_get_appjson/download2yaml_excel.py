@@ -788,52 +788,89 @@ class ExcelFormatter:
     return details
 
 def create_excel_report(appid, base_dir):
-  """Excelレポートを作成"""
-  tsv_filename = base_dir / f"{appid}_layout_structured.tsv"
-  excel_filename = base_dir / f"{appid}_layout_report.xlsx"
-  workbook = Workbook()
-  worksheet = workbook.active
+    """Excelレポートを作成"""
+    tsv_filename = base_dir / f"{appid}_layout_structured.tsv"
+    excel_filename = base_dir / f"{appid}_layout_report.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
 
-  formatter = ExcelFormatter(workbook=workbook, worksheet=worksheet, filename=excel_filename)
+    formatter = ExcelFormatter(workbook=workbook, worksheet=worksheet, filename=excel_filename)
 
-  formatter.set_row_height(200, 20)
-  formatter.set_column_width(1, 26*5, 22)
-  
-  # BA列とBB列の幅を設定
-  worksheet.column_dimensions['BA'].width = 25
-  worksheet.column_dimensions['BB'].width = 25
+    formatter.set_row_height(200, 20)
+    formatter.set_column_width(1, 26*5, 22)
+    
+    # BA列とBB列の幅を設定
+    worksheet.column_dimensions['BA'].width = 25
+    worksheet.column_dimensions['BB'].width = 25
 
-  # BC列とBD列の幅を設定
-  worksheet.column_dimensions['BC'].width = 30  # 選択肢リスト用
-  worksheet.column_dimensions['BD'].width = 25  # ルックアップ情報用
+    # BC列とBD列の幅を設定
+    worksheet.column_dimensions['BC'].width = 30  # 選択肢リスト用
+    worksheet.column_dimensions['BD'].width = 25  # ルックアップ情報用
 
-  # BE列とBF列の幅を設定（デバッグ用）
-  worksheet.column_dimensions['BE'].width = 50  # 行の全データ用
-  worksheet.column_dimensions['BF'].width = 50  # JSON文字列用
+    # BE列とBF列の幅を設定（デバッグ用）
+    worksheet.column_dimensions['BE'].width = 50  # 行の全データ用
+    worksheet.column_dimensions['BF'].width = 50  # JSON文字列用
 
-  # 白背景の設定
-  white_fill = PatternFill(start_color='FFFFFF', end_color='FFFFFF', fill_type="solid")
-  for row in range(1, 201):
-    for col in range(1, 54):
-      cell = worksheet.cell(row=row, column=col)
-      cell.fill = white_fill
+    # 白背景の設定
+    white_fill = PatternFill(start_color='FFFFFF', end_color='FFFFFF', fill_type="solid")
+    for row in range(1, 201):
+        for col in range(1, 54):
+            cell = worksheet.cell(row=row, column=col)
+            cell.fill = white_fill
 
-  # ヘッダー行の設定
-  formatter.merge_cells_and_set_content('D2', 'R2', '項目名', alignment="left", bottom_border=True, right_border=False)
-  formatter.merge_cells_and_set_content('S2', 'T2', '必須', alignment="center", bottom_border=True, right_border=True)
-  formatter.merge_cells_and_set_content('U2', 'V2', 'JS', alignment="center", bottom_border=True, right_border=True)
-  formatter.merge_cells_and_set_content('W2', 'X2', 'plugin', alignment="center", bottom_border=True, right_border=True)
-  formatter.merge_cells_and_set_content('Y2', 'AO2', '備考', alignment="left", bottom_border=True, right_border=True)
-  formatter.merge_cells_and_set_content('BA2', 'BA2', 'フィールドコード', alignment="center", bottom_border=True, right_border=True)
-  formatter.merge_cells_and_set_content('BB2', 'BB2', 'フィールド種別', alignment="center", bottom_border=True, right_border=True)
-  formatter.merge_cells_and_set_content('BC2', 'BC2', 'ドロップダウン選択肢', alignment="center", bottom_border=True, right_border=True)
-  formatter.merge_cells_and_set_content('BD2', 'BD2', 'ルックアップ設定', alignment="center", bottom_border=True, right_border=True)
-  formatter.merge_cells_and_set_content('BE2', 'BE2', '行データ（全体）', alignment="center", bottom_border=True, right_border=True)
-  formatter.merge_cells_and_set_content('BF2', 'BF2', 'JSON文字列', alignment="center", bottom_border=True, right_border=True)
+    # ヘッダー行の設定（例）
+    formatter.merge_cells_and_set_content('D2', 'R2', '項目名', alignment="left", bottom_border=True, right_border=False)
+    formatter.merge_cells_and_set_content('S2', 'T2', '必須', alignment="center", bottom_border=True, right_border=True)
+    formatter.merge_cells_and_set_content('U2', 'V2', 'JS', alignment="center", bottom_border=True, right_border=True)
+    formatter.merge_cells_and_set_content('W2', 'X2', 'plugin', alignment="center", bottom_border=True, right_border=True)
+    formatter.merge_cells_and_set_content('Y2', 'AO2', '備考', alignment="left", bottom_border=True, right_border=True)
+    formatter.merge_cells_and_set_content('BA2', 'BA2', 'フィールドコード', alignment="center", bottom_border=True, right_border=True)
+    formatter.merge_cells_and_set_content('BB2', 'BB2', 'フィールド種別', alignment="center", bottom_border=True, right_border=True)
+    formatter.merge_cells_and_set_content('BC2', 'BC2', 'ドロップダウン選択肢', alignment="center", bottom_border=True, right_border=True)
+    formatter.merge_cells_and_set_content('BD2', 'BD2', 'JS使用箇所', alignment="center", bottom_border=True, right_border=True)
+    formatter.merge_cells_and_set_content('BE2', 'BE2', '行データ（全体）', alignment="center", bottom_border=True, right_border=True)
+    formatter.merge_cells_and_set_content('BF2', 'BF2', 'JSON文字列', alignment="center", bottom_border=True, right_border=True)
 
-  formatter.set_by_out02_tsv(tsv_filename)
-  formatter.save()
-  print(f"Excelレポートを作成しました: {excel_filename}")
+    # -----------------------------
+    # フィールドコードの使用箇所情報を生成して保存
+    # -----------------------------
+    js_dir = base_dir / 'javascript'
+    field_codes_map = scan_directory_for_field_codes_with_lines(js_dir)
+    field_codes_yaml_path = base_dir / f"{appid}_field_codes_usage_at_javascript.yaml"
+    with open(field_codes_yaml_path, 'w', encoding='utf-8') as f:
+        yaml.dump(field_codes_map, f, allow_unicode=True, sort_keys=False)
+    print(f"フィールドコードの使用箇所情報を {field_codes_yaml_path} に保存しました。")
+
+    # -----------------------------
+    # 保存済みのYAMLファイルを利用する処理
+    # -----------------------------
+    field_codes_usage = {}
+    if field_codes_yaml_path.exists():
+        with open(field_codes_yaml_path, 'r', encoding='utf-8') as f:
+            field_codes_usage = yaml.safe_load(f) or {}
+
+    # TSVファイルを開いて、各行のフィールドコードに対応する使用箇所情報をExcelのBD列に設定する
+    with open(tsv_filename, 'r', encoding='utf-8') as f:
+        tsv_reader = csv.reader(f, delimiter='\t')
+        # 必要に応じてヘッダー行がある場合は読み飛ばす
+        header = next(tsv_reader, None)
+        for row_idx, row in enumerate(tsv_reader, 2):
+            # BA列（フィールドコード）は、Excelの列番号に対応させるために変換（列番号は1始まり）
+            ba_col_index = column_index_from_string('BA')  # 53 などの数字が返る
+            if len(row) >= ba_col_index:
+                field_code = row[ba_col_index - 1]  # リストは0始まりなので
+                if field_code in field_codes_usage:
+                    usage_info = []
+                    for js_file, lines in field_codes_usage[field_code].items():
+                        usage_info.append(f"{js_file}（{', '.join(map(str, lines))}行目）")
+                    usage_text = '\n'.join(usage_info)
+                    worksheet.cell(row=row_idx, column=column_index_from_string('BD'), value=usage_text)
+
+    # -----------------------------
+    # その後、他のTSV情報をセルに配置する処理（例：既存の formatter.set_by_out02_tsv の呼び出し）
+    formatter.set_by_out02_tsv(tsv_filename)
+    formatter.save()
+    print(f"Excelレポートを作成しました: {excel_filename}")
 
 def export_all_records(appid, api_token, base_dir, subdomain, get_all=False):
   """アプリの全レコードをJSONおよびTSVファイルにエクスポート
