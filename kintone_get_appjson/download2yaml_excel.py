@@ -14,6 +14,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, PatternFill, Border, Side, Font
 from openpyxl.utils.cell import column_index_from_string, get_column_letter, coordinate_from_string
 import base64
+from collections import defaultdict
 
 def convert_to_utf8_if_sjis(content):
   """コンテンツをUTF-8に変換（Shift_JISの場合も対応）"""
@@ -990,95 +991,138 @@ def export_all_records(appid, api_token, base_dir, subdomain, get_all=False):
     print("エクスポートするレコードが見つかりませんでした。")
 
 def download_app_data(appid, api_token, base_dir, js_dir, json_dir, subdomain, username, password):
-  """アプリデータをダウンロードして保存"""
-  endpoints = {
-    # /app/ が無いタイプ
-    "form": {"url": f"https://{subdomain}.cybozu.com/k/v1/form.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "record_acl": {"url": f"https://{subdomain}.cybozu.com/k/v1/record/acl.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "field_acl": {"url": f"https://{subdomain}.cybozu.com/k/v1/field/acl.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+    """アプリデータをダウンロードして保存"""
+    endpoints = {
+        # /app/ が無いタイプ
+        "form": {"url": f"https://{subdomain}.cybozu.com/k/v1/form.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "record_acl": {"url": f"https://{subdomain}.cybozu.com/k/v1/record/acl.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "field_acl": {"url": f"https://{subdomain}.cybozu.com/k/v1/field/acl.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
 
-    # /app/ があるタイプ
-    "form_fields": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/form/fields.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "form_layout": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/form/layout.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "views": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/views.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "settings": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/settings.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "process_management": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/status.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "plugins": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/plugins.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "app_notifications": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/notifications/perRecord.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "record_notifications": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/notifications/perRecord.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "reminder_notifications": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/notifications/reminder.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "app_acl": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/acl.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "actions": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/actions.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "graphs": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/reports.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-    "general_notifications": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/notifications/general.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
-  }
-
-  js_info = []
-
-  for name, endpoint in endpoints.items():
-    url = endpoint["url"]
-    auth_type = endpoint["auth_type"]
-    headers = {
-      auth_type: api_token if auth_type == "X-Cybozu-API-Token" else encoded_auth
+        # /app/ があるタイプ
+        "form_fields": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/form/fields.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "form_layout": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/form/layout.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "views": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/views.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "settings": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/settings.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "process_management": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/status.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "plugins": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/plugins.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "app_notifications": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/notifications/perRecord.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "record_notifications": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/notifications/perRecord.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "reminder_notifications": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/notifications/reminder.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "app_acl": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/acl.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "actions": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/actions.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "graphs": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/reports.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
+        "general_notifications": {"url": f"https://{subdomain}.cybozu.com/k/v1/app/notifications/general.json?app={appid}", "auth_type": "X-Cybozu-API-Token"},
     }
 
-    data = fetch_data(url, headers)
-    save_json_file(data, json_dir, appid, name)
-    save_yaml_file(data, base_dir, appid, name)
+    js_info = []
 
-  # カスタマイズ情報の取得とJavaScriptファイルの処理
-  customize_data = get_customize_info(appid, subdomain, username, password)
-  save_json_file(customize_data, json_dir, appid, "customize")
-  save_yaml_file(customize_data, base_dir, appid, "customize")
+    for name, endpoint in endpoints.items():
+        url = endpoint["url"]
+        auth_type = endpoint["auth_type"]
+        headers = {
+            auth_type: api_token if auth_type == "X-Cybozu-API-Token" else encoded_auth
+        }
 
-  files = customize_data.get('desktop', {}).get('js', [])
-  for file_info in files:
-    if file_info.get('type') == 'URL':
-      download_url_content(appid, file_info['url'], js_info, js_dir)
-    else:
-      file_data = file_info.get('file', {})
-      if file_data.get('fileKey') and file_data.get('name'):
-        download_file(file_data['fileKey'], api_token, appid, file_data['name'], js_info, js_dir, subdomain)
+        data = fetch_data(url, headers)
+        save_json_file(data, json_dir, appid, name)
+        save_yaml_file(data, base_dir, appid, name)
 
-  # JavaScript情報を保存
-  save_json_file(js_info, json_dir, appid, "javascript_info")
-  save_yaml_file(js_info, base_dir, appid, "javascript_info")
+    # カスタマイズ情報の取得とJavaScriptファイルの処理
+    customize_data = get_customize_info(appid, subdomain, username, password)
+    save_json_file(customize_data, json_dir, appid, "customize")
+    save_yaml_file(customize_data, base_dir, appid, "customize")
+
+    files = customize_data.get('desktop', {}).get('js', [])
+    for file_info in files:
+        if file_info.get('type') == 'URL':
+            download_url_content(appid, file_info['url'], js_info, js_dir)
+        else:
+            file_data = file_info.get('file', {})
+            if file_data.get('fileKey') and file_data.get('name'):
+                download_file(file_data['fileKey'], api_token, appid, file_data['name'], js_info, js_dir, subdomain)
+
+    # JavaScript情報を保存
+    save_json_file(js_info, json_dir, appid, "javascript_info")
+    save_yaml_file(js_info, base_dir, appid, "javascript_info")
+
+    # JavaScriptファイルのダウンロード処理が完了した後に追加
+    # フィールドコードの使用箇所を解析
+    field_codes_map = scan_directory_for_field_codes_with_lines(js_dir)
+    
+    # フィールドコードの使用箇所情報をYAMLファイルとして保存
+    field_codes_yaml = base_dir / f"{appid}_field_codes_usage_at_javascript.yaml"
+    with open(field_codes_yaml, 'w', encoding='utf-8') as f:
+        yaml.dump(field_codes_map, f, allow_unicode=True, sort_keys=False)
+    
+    print(f"フィールドコードの使用箇所情報を {field_codes_yaml} に保存しました。")
+
+def extract_field_codes_with_lines(filepath):
+    """JavaScriptファイルからフィールドコードの使用箇所を抽出"""
+    patterns = [
+        re.compile(r'record\[\s*["\']([\w-]+)["\']\s*\]'),  # record["field"]
+        re.compile(r'kintone\.app\.record\.\w+\(\s*["\']([\w-]+)["\']'),  # kintone.app.record.setFieldShown("field")
+        re.compile(r'event\.record\.([\w-]+)\.value'),  # event.record.field.value
+    ]
+    
+    result = defaultdict(list)
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            for lineno, line in enumerate(f, start=1):
+                for pattern in patterns:
+                    for match in pattern.findall(line):
+                        result[match].append(lineno)
+    except Exception as e:
+        print(f"Error reading {filepath}: {e}")
+    
+    return {field: sorted(set(lines)) for field, lines in result.items()} if result else {}
+
+def scan_directory_for_field_codes_with_lines(js_dir):
+    """ディレクトリ内のJavaScriptファイルをスキャンしてフィールドコードの使用箇所をマップ化"""
+    field_code_map = defaultdict(dict)
+    
+    for file_path in js_dir.glob('*.js'):
+        file_result = extract_field_codes_with_lines(file_path)
+        if file_result:
+            for field, lines in file_result.items():
+                field_code_map[field][file_path.name] = lines
+    
+    return dict(field_code_map)
 
 def flatten_record(record):
-  """
-  レコードをフラット化し、ネストされた 'value' フィールドを展開します。
-  'type' フィールドは無視し、'value' のみを使用します。
-  特定のパターンに基づいてカスタムフォーマットを適用します。
-  """
-  flattened = {}
-  for key, value in record.items():
-    # 'value' フィールドが存在する場合
-    if isinstance(value, dict) and 'value' in value:
-      extracted = extract_value(value)
-      # カスタムフォーマットを適用
-      formatted_value = format_custom_fields(flattened, key, extracted)
-      if isinstance(extracted, dict):
-        # 'value' が辞書の場合、各サブフィールドを展開
-        for sub_key, sub_value in extracted.items():
-          # 既にカスタムフォーマットが適用されている場合はスキップ
-          if key == 'value':
-            continue
-          latest_sub_value = replace_custom_format(sub_value)
-          flattened[sub_key] = clean_string(sub_value)
-      else:
-        # 'value' が辞書でない場合、そのまま格納
-        formatted_value = replace_custom_format(formatted_value)
-        flattened[key] = formatted_value
-    else:
-      # 'value' フィールドがない場合はそのまま
-      if isinstance(value, dict):
-        # 'value' がない辞書の場合、再帰的に処理
-        for sub_key, sub_value in value.items():
-          flattened[sub_key] = extract_value(sub_value)
-      else:
-        # その他のフィールド
-        flattened[key] = clean_string(value)
-  return flattened
+    """
+    レコードをフラット化し、ネストされた 'value' フィールドを展開します。
+    'type' フィールドは無視し、'value' のみを使用します。
+    特定のパターンに基づいてカスタムフォーマットを適用します。
+    """
+    flattened = {}
+    for key, value in record.items():
+        # 'value' フィールドが存在する場合
+        if isinstance(value, dict) and 'value' in value:
+            extracted = extract_value(value)
+            # カスタムフォーマットを適用
+            formatted_value = format_custom_fields(flattened, key, extracted)
+            if isinstance(extracted, dict):
+                # 'value' が辞書の場合、各サブフィールドを展開
+                for sub_key, sub_value in extracted.items():
+                    # 既にカスタムフォーマットが適用されている場合はスキップ
+                    if key == 'value':
+                        continue
+                    latest_sub_value = replace_custom_format(sub_value)
+                    flattened[sub_key] = clean_string(sub_value)
+            else:
+                # 'value' が辞書でない場合、そのまま格納
+                formatted_value = replace_custom_format(formatted_value)
+                flattened[key] = formatted_value
+        else:
+            # 'value' フィールドがない場合はそのまま
+            if isinstance(value, dict):
+                # 'value' がない辞書の場合、再帰的に処理
+                for sub_key, sub_value in value.items():
+                    flattened[sub_key] = extract_value(sub_value)
+            else:
+                # その他のフィールド
+                flattened[key] = clean_string(value)
+    return flattened
 
 def extract_value(field_data):
     """フィールドデータから値を抽出"""
