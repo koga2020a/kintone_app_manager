@@ -288,26 +288,28 @@ class ExcelExporter:
     self.logger.info("グループ情報シート用のデータを準備中...")
     
     for group in self.group_names:
-      group_users = []
-      for df in self.dataframes.values():
-        # グループに所属するユーザーを抽出
-        mask = df[group] == '●'
-        users = df[mask][['ユーザーID', 'ログイン名', '氏名', 'メールアドレス', 'ステータス']].copy()
+        group_users = []
+        for df in self.dataframes.values():
+            # グループに所属するユーザーを抽出
+            mask = df[group] == '●'
+            users = df[mask][['ユーザーID', 'ログイン名', '氏名', 'メールアドレス', 'ステータス']].copy()
+            
+            if not users.empty:
+                # メールアドレスを分解してソート用の列を作成
+                users['domain'] = users['メールアドレス'].str.split('@').str[1]
+                users['localpart'] = users['メールアドレス'].str.split('@').str[0]
+                # ドメインでソート、次に@前のローカル部分でソート
+                users = users.sort_values(['domain', 'localpart'])
+                # 一時的なソート用列を削除
+                users = users.drop(['domain', 'localpart'], axis=1)
+                # 停止中のユーザーに「●」を追加
+                users['停止中'] = users['ステータス'].apply(lambda x: '●' if x == '停止中' else '')
+                group_users.append(users)
         
-        if not users.empty:
-          # メールアドレスのドメイン部分を抽出
-          users['domain'] = users['メールアドレス'].str.split('@').str[1]
-          # ドメインでソート
-          users = users.sort_values(['domain', 'メールアドレス'])
-          users = users.drop('domain', axis=1)  # 一時的なドメイン列を削除
-          # 停止中のユーザーに「●」を追加
-          users['停止中'] = users['ステータス'].apply(lambda x: '●' if x == '停止中' else '')
-          group_users.append(users)
-      
-      if group_users:
-        self.group_data[group] = pd.concat(group_users, ignore_index=True)
-      else:
-        self.group_data[group] = pd.DataFrame(columns=['ユーザーID', 'ログイン名', '氏名', 'メールアドレス', '停止中'])
+        if group_users:
+            self.group_data[group] = pd.concat(group_users, ignore_index=True)
+        else:
+            self.group_data[group] = pd.DataFrame(columns=['ユーザーID', 'ログイン名', '氏名', 'メールアドレス', '停止中'])
 
   def export_to_excel(self):
     self.logger.info("Excelファイルに出力中...")
@@ -489,6 +491,9 @@ class ExcelExporter:
         # 枠線（太線）の設定
         thick_side = Side(border_style='thick', color="000000")
         
+        # 非kirin.co.jpドメイン用の背景色
+        light_gray_fill = PatternFill(start_color='EEEEEE', end_color='EEEEEE', fill_type='solid')
+        
         # シート全体を走査して、各セットごとにフォーマットを適用する
         row = 1
         while row <= ws.max_row:
@@ -516,6 +521,14 @@ class ExcelExporter:
                 # セットのデータ行の最終行を検出
                 data_start = row
                 while row <= ws.max_row and ws.cell(row=row, column=1).value not in [None, ""]:
+                    # D列（メールアドレス）を右寄せに
+                    email_cell = ws.cell(row=row, column=4)
+                    email_cell.alignment = Alignment(horizontal='right')
+                    
+                    # メールアドレスが@kirin.co.jp以外なら背景色を薄いグレーに
+                    if email_cell.value and not email_cell.value.lower().endswith('@kirin.co.jp'):
+                        email_cell.fill = light_gray_fill
+                    
                     # 停止中列を中央揃えに
                     ws.cell(row=row, column=5).alignment = Alignment(horizontal='center')
                     row += 1
