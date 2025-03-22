@@ -824,9 +824,14 @@ class KintoneApp:
                 properties = fields_data.get('properties', {})
                 for field_code, field_info in properties.items():
                     label = field_info.get('label', field_code)
-                    field_name_map[field_code] = f"{label} ({field_code})"
+                    field_name_map[field_code] = label
         except Exception as e:
             print(f"フィールド情報の読み込みエラー: {e}")
+        
+        # 背景色の設定
+        light_blue_fill = PatternFill(start_color="DEEBF7", end_color="DEEBF7", fill_type="solid")
+        light_green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+        dark_green_fill = PatternFill(start_color="C6E0B4", end_color="C6E0B4", fill_type="solid")
         
         # 各JSファイルに対してシートを作成
         for js_file in js_dir.glob('*.js'):
@@ -845,14 +850,32 @@ class KintoneApp:
                 # ヘッダー行の設定
                 ws['A1'] = 'ファイル名:'
                 ws['B1'] = js_file.name
+                
+                # A1, B1に淡い水色の背景色を設定
+                ws['A1'].fill = light_blue_fill
+                ws['B1'].fill = light_blue_fill
+                
+                # テーブルヘッダーの設定
                 ws['A3'] = '行番号'
-                ws['B3'] = 'フィールド名/コード'
-                ws['C3'] = 'コード'
+                ws['A3'].alignment = Alignment(horizontal='center', vertical='center')
+                ws['B3'] = 'フィールド名'
+                ws['B3'].alignment = Alignment(horizontal='center', vertical='center')
+                ws['C3'] = 'フィールドコード'
+                ws['C3'].alignment = Alignment(horizontal='center', vertical='center')
+                ws['D3'] = 'ソースコード'
+                ws['D3'].alignment = Alignment(horizontal='center', vertical='center')
+                
+                # A3, B3, C3, D3に淡い緑色の背景色を設定
+                ws['A3'].fill = light_green_fill
+                ws['B3'].fill = light_green_fill
+                ws['C3'].fill = light_green_fill
+                ws['D3'].fill = dark_green_fill
                 
                 # 列幅の設定
-                ws.column_dimensions['A'].width = 8
-                ws.column_dimensions['B'].width = 35
-                ws.column_dimensions['C'].width = 120
+                ws.column_dimensions['A'].width = 10
+                ws.column_dimensions['B'].width = 34
+                ws.column_dimensions['C'].width = 34
+                ws.column_dimensions['D'].width = 140
                 
                 # ファイルの内容を読み込む
                 with open(js_file, 'r', encoding='utf-8', errors='replace') as f:
@@ -867,16 +890,26 @@ class KintoneApp:
                             if line_num <= len(lines):
                                 if line_num not in field_usage:
                                     field_usage[line_num] = []
-                                field_name = field_name_map.get(field_code, field_code)
-                                field_usage[line_num].append(field_name)
+                                field_name = field_name_map.get(field_code, "")
+                                field_usage[line_num].append((field_name, field_code))
                 
                 # コードをセルに表示（5行目から開始）
                 for i, line in enumerate(lines, 1):
                     row_num = i + 4  # 5行目から開始
                     ws[f'A{row_num}'] = i
+                    
                     if i in field_usage:
-                        ws[f'B{row_num}'] = '\n'.join(field_usage[i])
-                    ws[f'C{row_num}'] = line.rstrip('\n\r')
+                        # 同じ行に複数のフィールドがある場合は改行で区切る
+                        field_names = []
+                        field_codes = []
+                        for name, code in field_usage[i]:
+                            field_names.append(name)
+                            field_codes.append(code)
+                        
+                        ws[f'B{row_num}'] = '\n'.join(field_names)
+                        ws[f'C{row_num}'] = '\n'.join(field_codes)
+                    
+                    ws[f'D{row_num}'] = line.rstrip('\n\r')
                 
                 print(f"JSファイル {js_file.name} のシートを作成しました。")
             except Exception as e:
