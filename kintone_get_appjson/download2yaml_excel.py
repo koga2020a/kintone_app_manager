@@ -808,6 +808,79 @@ class KintoneApp:
                 bd_cell = ws.cell(row=row, column=column_index_from_string('BD'))
                 bd_cell.value = usage_text.strip()
                 bd_cell.font = formatter.font
+        
+        # JSファイル別にシートを作成して内容を表示
+        self._create_js_code_sheets(formatter.wb, field_codes_map)
+
+    def _create_js_code_sheets(self, workbook, field_codes_map):
+        """各JSファイルの内容を別シートに表示し、フィールドコードの使用箇所を強調表示する"""
+        js_dir = self.base_dir / 'javascript'
+        
+        # フィールドコードとその表示名の対応を取得
+        field_name_map = {}
+        try:
+            with open(self.json_dir / f"{self.appid}_form_fields.json", 'r', encoding='utf-8') as f:
+                fields_data = json.load(f)
+                properties = fields_data.get('properties', {})
+                for field_code, field_info in properties.items():
+                    label = field_info.get('label', field_code)
+                    field_name_map[field_code] = f"{label} ({field_code})"
+        except Exception as e:
+            print(f"フィールド情報の読み込みエラー: {e}")
+        
+        # 各JSファイルに対してシートを作成
+        for js_file in js_dir.glob('*.js'):
+            # シート名はファイル名（拡張子なし）に設定（長さ制限に注意）
+            sheet_name = js_file.stem[:30]  # Excel制限: 31文字以内
+            
+            try:
+                # シートが既に存在する場合は削除
+                if sheet_name in workbook.sheetnames:
+                    ws = workbook[sheet_name]
+                    workbook.remove(ws)
+                
+                # 新しいシートを作成
+                ws = workbook.create_sheet(sheet_name)
+                
+                # ヘッダー行の設定
+                ws['A1'] = 'ファイル名:'
+                ws['B1'] = js_file.name
+                ws['A3'] = '行番号'
+                ws['B3'] = 'フィールド名/コード'
+                ws['C3'] = 'コード'
+                
+                # 列幅の設定
+                ws.column_dimensions['A'].width = 8
+                ws.column_dimensions['B'].width = 35
+                ws.column_dimensions['C'].width = 120
+                
+                # ファイルの内容を読み込む
+                with open(js_file, 'r', encoding='utf-8', errors='replace') as f:
+                    lines = f.readlines()
+                
+                # 使用されているフィールドコードとその行番号を特定
+                field_usage = {}
+                for field_code, usage_info in field_codes_map.items():
+                    if js_file.name in usage_info:
+                        line_numbers = usage_info[js_file.name]
+                        for line_num in line_numbers:
+                            if line_num <= len(lines):
+                                if line_num not in field_usage:
+                                    field_usage[line_num] = []
+                                field_name = field_name_map.get(field_code, field_code)
+                                field_usage[line_num].append(field_name)
+                
+                # コードをセルに表示（5行目から開始）
+                for i, line in enumerate(lines, 1):
+                    row_num = i + 4  # 5行目から開始
+                    ws[f'A{row_num}'] = i
+                    if i in field_usage:
+                        ws[f'B{row_num}'] = '\n'.join(field_usage[i])
+                    ws[f'C{row_num}'] = line.rstrip('\n\r')
+                
+                print(f"JSファイル {js_file.name} のシートを作成しました。")
+            except Exception as e:
+                print(f"シート {sheet_name} の作成中にエラーが発生しました: {e}")
 
     def export_all_records(self, get_all=False):
         url = f"https://{self.subdomain}.cybozu.com/k/v1/records.json"
