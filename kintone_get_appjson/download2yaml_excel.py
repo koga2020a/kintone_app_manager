@@ -605,7 +605,7 @@ class ExcelFormatter:
           set_val_font(self.ws[f'BE{i+3}'], str(row))
           if len(row) > 10:
               set_val_font(self.ws[f'BF{i+3}'], row[10])
-
+                  
   def get_column_group_arrays(self):
     """列グループの配列を取得"""
     def get_column_groups(column_letter, min_valid_b_value):
@@ -806,6 +806,21 @@ def create_excel_report(appid, base_dir):
     formatter.merge_cells_and_set_content('BD2', 'BD2', 'JS使用箇所', alignment="center", bottom_border=True, right_border=True)
     formatter.merge_cells_and_set_content('BE2', 'BE2', '行データ（全体）', alignment="center", bottom_border=True, right_border=True)
     formatter.merge_cells_and_set_content('BF2', 'BF2', 'JSON文字列', alignment="center", bottom_border=True, right_border=True)
+
+    # フォーマッターでL字型の罫線を描画するための準備
+    formatter.get_column_group_arrays()
+    
+    # 'G'で始まるグループと'S'で始まるサブテーブルのL字型罫線を描画
+    g_groups = formatter.get_groups_by_first_char('G')
+    s_groups = formatter.get_groups_by_first_char('S')
+    
+    # グループのL字型罫線を描画（薄い青色）
+    if g_groups:
+        formatter.draw_l_line(g_groups, background_color='E6F0F9')
+    
+    # テーブルのL字型罫線を描画（より濃い青色）
+    if s_groups:
+        formatter.draw_l_line(s_groups, background_color='D4E4F4')
 
     # -----------------------------
     # フィールドコードの使用箇所情報を生成して保存
