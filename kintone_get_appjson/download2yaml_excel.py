@@ -17,23 +17,23 @@ import base64
 from collections import defaultdict
 
 def convert_to_utf8_if_sjis(content):
-  """コンテンツをUTF-8に変換（Shift_JISの場合も対応）"""
-  try:
-    content = content.decode('utf-8')
-  except UnicodeDecodeError:
-    content = content.decode('shift_jis').encode('utf-8').decode('utf-8')
-  return content
+    """コンテンツをUTF-8に変換（Shift_JISの場合も対応）"""
+    try:
+        content = content.decode('utf-8')
+    except UnicodeDecodeError:
+        content = content.decode('shift_jis').encode('utf-8').decode('utf-8')
+    return content
 
 def fetch_data(url, headers):
-  """指定されたURLからデータを取得し、JSONとして返す"""
-  try:
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
-    content = convert_to_utf8_if_sjis(response.content)
-    return json.loads(content)
-  except requests.exceptions.RequestException as e:
-    print(f"Error fetching data from {url}: {e}")
-    sys.exit(1)
+    """指定されたURLからデータを取得し、JSONとして返す"""
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        content = convert_to_utf8_if_sjis(response.content)
+        return json.loads(content)
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching data from {url}: {e}")
+        sys.exit(1)
 
 def sanitize_app_name(app_name):
   """
@@ -239,86 +239,87 @@ def grep_code_properties(fields_file_path, target_code):
   return code_properties
 
 def process_file(layout_file_path, fields_file_path, output_file):
-  """レイアウトファイルとフィールドファイルを処理してTSVを生成"""
-  with open(layout_file_path, 'r', encoding='utf-8') as f:
-    lines = f.readlines()
+    """レイアウトファイルとフィールドファイルを処理してTSVを生成"""
+    with open(layout_file_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
 
-  with open(output_file, 'w', encoding='utf-8') as out_f:
-    type_pattern = re.compile(r'\"type\":\s*\"([^\"]+)\"')
-    label_code_pattern = re.compile(r'\"(label|code|elementId)\":\s*\"(.+)\"')
-    indent_level = 0
-    current_type = None
-    current_group = None
-    group_counter = 0
-    group_indent = None
-    current_subtable = None
-    subtable_counter = 0
-    subtable_indent = None
-    current_italic = None
-    italic_counter = 0
-    italic_indent = None
-
-    for i, line in enumerate(lines):
-      indent_level += line.count('{') - line.count('}')
-
-      if current_group is not None and indent_level < group_indent:
-        current_group = None
-        if italic_in_group is True:
-          current_italic = None
-
-      if subtable_indent is not None and indent_level < subtable_indent:
-        current_subtable = None
-
-      type_match = type_pattern.search(line)
-      if type_match:
-        current_type = type_match.group(1)
-        if current_type == "GROUP":
-          group_counter += 1
-          current_group = group_counter
-          group_indent = indent_level
-          continue
-        if current_type == "SUBTABLE":
-          subtable_counter += 1
-          current_subtable = subtable_counter
-          subtable_indent = indent_level
-          continue
-        if current_type == "HR":
-          out_f.write(f"{indent_level}\t{current_italic or ''}\t{current_group or ''}\t{current_subtable or ''}\t{current_type}\n")
-          current_type = None
-          continue
-
-      label_code_match = label_code_pattern.search(line)
-      if label_code_match and current_type:
-        key_type = label_code_match.group(1)
-        key_value = label_code_match.group(2)
-
-        if current_type == "SPACER" and key_type == "elementId":
-          out_f.write(f"{indent_level}\t{current_italic or ''}\t{current_group or ''}\t{current_subtable or ''}\t{current_type}\t{key_value}\t\n")
-        elif key_type == "code":
-          additional_properties = grep_code_properties(fields_file_path, key_value)
-          additional_info = ', '.join([f"{k}: {v}" for k, v in additional_properties.items()])
-          out_f.write(f"{indent_level}\t{current_italic or ''}\t{current_group or ''}\t{current_subtable or ''}\t{current_type}\t{key_value}\t\t\t\t\t{additional_info}\n")
-        else:
-          if key_type == 'label' and ('background-color:rgb(' in key_value) and len(key_value)<30 or ('<i>' in key_value):
-            italic_counter += 1
-            current_italic = italic_counter
-            italic_indent = indent_level
-            if current_group is not None:
-              italic_in_group = True
-            else:
-              italic_in_group = False
-            soup = BeautifulSoup(key_value, 'html.parser')
-            tmp_key_value = soup.get_text().strip()
-            out_f.write(f"{indent_level}\t{current_italic or ''}\t{current_group or ''}\t{current_subtable or ''}\t{current_type}\t\t{tmp_key_value}\n")
-          else:
-            if key_type == 'label':
-              soup = BeautifulSoup(key_value, 'html.parser')
-              tmp_key_value = soup.get_text().strip()
-              out_f.write(f"{indent_level}\t{current_italic or ''}\t{current_group or ''}\t{current_subtable or ''}\t{current_type}\t\t\t\t\t\t{tmp_key_value}\n")
-            else:
-              out_f.write(f"{indent_level}\t{current_italic or ''}\t{current_group or ''}\t{current_subtable or ''}\t{current_type}\t{key_value}\t\n")
-
+    with open(output_file, 'w', encoding='utf-8') as out_f:
+        type_pattern = re.compile(r'\"type\":\s*\"([^\"]+)\"')
+        label_code_pattern = re.compile(r'\"(label|code|elementId)\":\s*\"(.+)\"')
+        indent_level = 0
         current_type = None
+        current_group = None
+        group_counter = 0
+        group_indent = None
+        current_subtable = None
+        subtable_counter = 0
+        subtable_indent = None
+        current_italic = None
+        italic_counter = 0
+        italic_indent = None
+        italic_in_group = False  # ここで初期化
+
+        for i, line in enumerate(lines):
+            indent_level += line.count('{') - line.count('}')
+
+            if current_group is not None and indent_level < group_indent:
+                current_group = None
+                if italic_in_group is True:
+                    current_italic = None
+
+            if subtable_indent is not None and indent_level < subtable_indent:
+                current_subtable = None
+
+            type_match = type_pattern.search(line)
+            if type_match:
+                current_type = type_match.group(1)
+                if current_type == "GROUP":
+                    group_counter += 1
+                    current_group = group_counter
+                    group_indent = indent_level
+                    continue
+                if current_type == "SUBTABLE":
+                    subtable_counter += 1
+                    current_subtable = subtable_counter
+                    subtable_indent = indent_level
+                    continue
+                if current_type == "HR":
+                    out_f.write(f"{indent_level}\t{current_italic or ''}\t{current_group or ''}\t{current_subtable or ''}\t{current_type}\n")
+                    current_type = None
+                    continue
+
+            label_code_match = label_code_pattern.search(line)
+            if label_code_match and current_type:
+                key_type = label_code_match.group(1)
+                key_value = label_code_match.group(2)
+
+                if current_type == "SPACER" and key_type == "elementId":
+                    out_f.write(f"{indent_level}\t{current_italic or ''}\t{current_group or ''}\t{current_subtable or ''}\t{current_type}\t{key_value}\t\n")
+                elif key_type == "code":
+                    additional_properties = grep_code_properties(fields_file_path, key_value)
+                    additional_info = ', '.join([f"{k}: {v}" for k, v in additional_properties.items()])
+                    out_f.write(f"{indent_level}\t{current_italic or ''}\t{current_group or ''}\t{current_subtable or ''}\t{current_type}\t{key_value}\t\t\t\t\t{additional_info}\n")
+                else:
+                    if key_type == 'label' and ('background-color:rgb(' in key_value) and len(key_value)<30 or ('<i>' in key_value):
+                        italic_counter += 1
+                        current_italic = italic_counter
+                        italic_indent = indent_level
+                        if current_group is not None:
+                            italic_in_group = True
+                        else:
+                            italic_in_group = False
+                        soup = BeautifulSoup(key_value, 'html.parser')
+                        tmp_key_value = soup.get_text().strip()
+                        out_f.write(f"{indent_level}\t{current_italic or ''}\t{current_group or ''}\t{current_subtable or ''}\t{current_type}\t\t{tmp_key_value}\n")
+                    else:
+                        if key_type == 'label':
+                            soup = BeautifulSoup(key_value, 'html.parser')
+                            tmp_key_value = soup.get_text().strip()
+                            out_f.write(f"{indent_level}\t{current_italic or ''}\t{current_group or ''}\t{current_subtable or ''}\t{current_type}\t\t\t\t\t\t{tmp_key_value}\n")
+                        else:
+                            out_f.write(f"{indent_level}\t{current_italic or ''}\t{current_group or ''}\t{current_subtable or ''}\t{current_type}\t{key_value}\t\n")
+
+                current_type = None
 
 def process_layout_and_fields(appid, base_dir, json_dir):
   """レイアウトとフィールドのJSONファイルを処理"""
@@ -479,156 +480,131 @@ class ExcelFormatter:
     print(f"Excelファイル '{self.filename}' が作成されました。")
 
   def set_by_out02_tsv(self, tsv_filename):
-    """構造化されたTSVからセルを設置"""
-    with open(tsv_filename, 'r', encoding='utf-8') as infile:
-      reader = csv.reader(infile, delimiter='\t')
-      rows = list(reader)
+      """構造化されたTSVからセルを設置（フィールド名をネストレベルに応じて右にずらす）"""
+      from openpyxl.utils import get_column_letter  # 念のため
 
-    for i, row in enumerate(rows):
-      new_row = [''] * 14
-
-      is_title_line = False
-      count_be = 1
-      if row[1] != '':
-        new_row[count_be] = 'L' + row[1]
-        count_be += 1
-        is_title_line = True if i == 0 else (row[1] == rows[i - 1][1])
-
-      if row[2] != '':
-        new_row[count_be] = 'G' + row[2]
-        count_be += 1
-        is_title_line = True if i == 0 else (row[2] == rows[i - 1][2])
-
-      if row[3] != '':
-        new_row[count_be] = 'S' + row[3]
-        count_be += 1
-        is_title_line = True if i == 0 else (row[3] == rows[i - 1][3])
-
-      new_row[0] = row[0]
-      indent_no = int(row[0]) + (0 if is_title_line else 1)
-      field_name = ((row[5]+' ') if row[4]=='GROUP' else '') + row[6]
-      new_row[indent_no + 1] = field_name
-
-      # 必須 の転記
-      new_row[6] = '〇' if (row[8] if len(row) > 8 else '') == '必須' else ''
-
-      # 項目名セル
+      # ヘルパー関数: セルに値とフォントを設定
       def set_val_font(in_cell, in_value):
-        in_cell.value = in_value
-        in_cell.font = self.font
+          in_cell.value = in_value
+          in_cell.font = self.font
 
-      set_val_font(self.ws[f'B{i+3}'], new_row[0])
-      set_val_font(self.ws[f'C{i+3}'], new_row[1])
-      set_val_font(self.ws[f'D{i+3}'], new_row[2])
-      set_val_font(self.ws[f'E{i+3}'], new_row[3])
-      set_val_font(self.ws[f'F{i+3}'], new_row[4])
-      set_val_font(self.ws[f'G{i+3}'], new_row[5])
-      set_val_font(self.ws[f'S{i+3}'], new_row[6])
-      
-      # BA列にフィールドコードを記載
-      if len(row) > 5 and row[4] != 'GROUP' and row[4] != 'LABEL' and row[4] != 'HR' and row[4] != 'SPACER':
-        field_code = row[5]  # フィールドコードは6列目（インデックス5）
-        set_val_font(self.ws[f'BA{i+3}'], field_code)
-        
-      # BB列にフィールド種別を記載
-      if len(row) > 4:
-        field_type = row[4]  # フィールドタイプは5列目（インデックス4）
-        # フィールドタイプを日本語に変換
-        field_type_ja = {
-          'SINGLE_LINE_TEXT': '文字列（1行）',
-          'MULTI_LINE_TEXT': '文字列（複数行）',
-          'RICH_TEXT': 'リッチエディター',
-          'NUMBER': '数値',
-          'CALC': '計算',
-          'DATE': '日付',
-          'TIME': '時刻',
-          'DATETIME': '日時',
-          'DROP_DOWN': 'ドロップダウン',
-          'RADIO_BUTTON': 'ラジオボタン',
-          'CHECK_BOX': 'チェックボックス',
-          'MULTI_SELECT': '複数選択',
-          'FILE': '添付ファイル',
-          'LINK': 'リンク',
-          'USER_SELECT': 'ユーザー選択',
-          'GROUP_SELECT': 'グループ選択',
-          'ORGANIZATION_SELECT': '組織選択',
-          'STATUS': 'ステータス',
-          'ASSIGNEE': '作業者',
-          'CATEGORY': 'カテゴリー',
-          'GROUP': 'グループ',
-          'SUBTABLE': 'テーブル',
-          'REFERENCE_TABLE': '関連レコード一覧',
-          'LABEL': 'ラベル',
-          'HR': '罫線',
-          'SPACER': 'スペース'
-        }.get(field_type, field_type)
-        set_val_font(self.ws[f'BB{i+3}'], field_type_ja)
+      with open(tsv_filename, 'r', encoding='utf-8') as infile:
+          reader = csv.reader(infile, delimiter='\t')
+          rows = list(reader)
 
-      # 項目名セル、セル結合
-      if new_row[4] != '':
-        self.ws.merge_cells(f'F{i+3}:R{i+3}')
-      else:
-        if new_row[3] != '':
-          self.ws.merge_cells(f'E{i+3}:R{i+3}')
-        else:
-          if new_row[2] != '':
-            self.ws.merge_cells(f'D{i+3}:R{i+3}')
+      for i, row in enumerate(rows):
+          new_row = [''] * 14
 
-      # 項目名セル
-      self.merge_cells_and_set_content(f'D{i+3}', f'R{i+3}',
-                      None, alignment="left",
-                      bottom_border=True, right_border=True,
-                      isMerge=False, isBackcolor=False)
+          # 先頭のグループ/テーブル情報を設定（例：L, G, S の接頭辞を付与）
+          is_title_line = False
+          count_be = 1
+          if row[1] != '':
+              new_row[count_be] = 'L' + row[1]
+              count_be += 1
+              is_title_line = True if i == 0 else (row[1] == rows[i - 1][1])
+          if row[2] != '':
+              new_row[count_be] = 'G' + row[2]
+              count_be += 1
+              is_title_line = True if i == 0 else (row[2] == rows[i - 1][2])
+          if row[3] != '':
+              new_row[count_be] = 'S' + row[3]
+              count_be += 1
+              is_title_line = True if i == 0 else (row[3] == rows[i - 1][3])
 
-      # 必須セル
-      self.merge_cells_and_set_content(f'S{i+3}', f'T{i+3}',
-                      None, alignment="center",
-                      bottom_border=True, right_border=True,
-                      isBackcolor=False)
+          new_row[0] = row[0]
+          # ここで入れ子の深さ（ネストレベル）に応じた開始位置を計算
+          # Excel上で B列が new_row[0]、C列が new_row[1]、D列が new_row[2] となるため、
+          # フィールド名の開始列を D列（new_row[2]）から開始し、ネストレベル分右にずらす
+          indent_level = int(row[0])  # row[0] にネストレベルが入っていると仮定
+          start_index = 2 + indent_level  # ネストレベル0 → new_row[2](D列)、1 → new_row[3](E列)...
+          field_name = ((row[5] + ' ') if row[4] == 'GROUP' else '') + row[6]
+          new_row[start_index] = field_name
 
-      # JSセル
-      self.merge_cells_and_set_content(f'U{i+3}', f'V{i+3}',
-                      None, alignment="center",
-                      bottom_border=True, right_border=True,
-                      isBackcolor=False)
+          # 必須マークの転記
+          new_row[6] = '〇' if (row[8] if len(row) > 8 else '') == '必須' else ''
 
-      # pluginセル
-      self.merge_cells_and_set_content(f'W{i+3}', f'X{i+3}',
-                      None, alignment="center",
-                      bottom_border=True, right_border=True,
-                      isBackcolor=False)
+          # 各列のセルに設定（B～G列、S列）
+          set_val_font(self.ws[f'B{i+3}'], new_row[0])
+          set_val_font(self.ws[f'C{i+3}'], new_row[1])
+          set_val_font(self.ws[f'D{i+3}'], new_row[2])
+          set_val_font(self.ws[f'E{i+3}'], new_row[3])
+          set_val_font(self.ws[f'F{i+3}'], new_row[4])
+          set_val_font(self.ws[f'G{i+3}'], new_row[5])
+          set_val_font(self.ws[f'S{i+3}'], new_row[6])
 
-      # 備考セル
-      self.merge_cells_and_set_content(f'Y{i+3}', f'AO{i+3}',
-                      None, alignment="left",
-                      bottom_border=True, right_border=True,
-                      isBackcolor=False)
+          # BA列にフィールドコードを記載（GROUP, LABEL, HR, SPACER 以外）
+          if len(row) > 5 and row[4] not in ['GROUP', 'LABEL', 'HR', 'SPACER']:
+              field_code = row[5]
+              set_val_font(self.ws[f'BA{i+3}'], field_code)
+          # BB列にフィールド種別を記載（日本語変換）
+          if len(row) > 4:
+              field_type = row[4]
+              field_type_ja = {
+                  'SINGLE_LINE_TEXT': '文字列（1行）',
+                  'MULTI_LINE_TEXT': '文字列（複数行）',
+                  'RICH_TEXT': 'リッチエディター',
+                  'NUMBER': '数値',
+                  'CALC': '計算',
+                  'DATE': '日付',
+                  'TIME': '時刻',
+                  'DATETIME': '日時',
+                  'DROP_DOWN': 'ドロップダウン',
+                  'RADIO_BUTTON': 'ラジオボタン',
+                  'CHECK_BOX': 'チェックボックス',
+                  'MULTI_SELECT': '複数選択',
+                  'FILE': '添付ファイル',
+                  'LINK': 'リンク',
+                  'USER_SELECT': 'ユーザー選択',
+                  'GROUP_SELECT': 'グループ選択',
+                  'ORGANIZATION_SELECT': '組織選択',
+                  'STATUS': 'ステータス',
+                  'ASSIGNEE': '作業者',
+                  'CATEGORY': 'カテゴリー',
+                  'GROUP': 'グループ',
+                  'SUBTABLE': 'テーブル',
+                  'REFERENCE_TABLE': '関連レコード一覧',
+                  'LABEL': 'ラベル',
+                  'HR': '罫線',
+                  'SPACER': 'スペース'
+              }.get(field_type, field_type)
+              set_val_font(self.ws[f'BB{i+3}'], field_type_ja)
 
-      # フィールド種別に応じた詳細設定の記載
-      if len(row) > 4:
-        field_type = row[4]
-        if field_type in ['DROP_DOWN']:
-          # 詳細設定をBC列に記載
-          details = self.get_field_details(row)
-          set_val_font(self.ws[f'BC{i+3}'], details.get('BC', ''))
+          # フィールド名セルの開始位置に合わせて、セル結合の開始セルを動的に決定
+          # new_row のインデックスと Excel の列は (index + 2) の対応になっているので…
+          field_start_col_letter = get_column_letter(start_index + 2)
+          merge_range = f"{field_start_col_letter}{i+3}:R{i+3}"
+          self.ws.merge_cells(merge_range)
+          # フィールド名セルの内容を設定
+          self.merge_cells_and_set_content(f"{field_start_col_letter}{i+3}", f"R{i+3}",
+                                          new_row[start_index],
+                                          alignment="left",
+                                          bottom_border=True,
+                                          right_border=True,
+                                          isMerge=False,
+                                          isBackcolor=False)
 
-      # BE列に行の全データを出力
-      set_val_font(self.ws[f'BE{i+3}'], str(row))
-      
-      # BF列にJSON文字列を出力
-      if len(row) > 10:
-        set_val_font(self.ws[f'BF{i+3}'], row[10])
+          # 以下、必須、JS、plugin、備考セルの結合と設定（変更なし）
+          self.merge_cells_and_set_content(f'S{i+3}', f'T{i+3}',
+                                          None, alignment="center",
+                                          bottom_border=True, right_border=True,
+                                          isMerge=False, isBackcolor=False)
+          self.merge_cells_and_set_content(f'U{i+3}', f'V{i+3}',
+                                          None, alignment="center",
+                                          bottom_border=True, right_border=True,
+                                          isMerge=False, isBackcolor=False)
+          self.merge_cells_and_set_content(f'W{i+3}', f'X{i+3}',
+                                          None, alignment="center",
+                                          bottom_border=True, right_border=True,
+                                          isMerge=False, isBackcolor=False)
+          self.merge_cells_and_set_content(f'Y{i+3}', f'AO{i+3}',
+                                          None, alignment="left",
+                                          bottom_border=True, right_border=True,
+                                          isMerge=False, isBackcolor=False)
 
-    self.get_column_group_arrays()
-    L_G = self.get_groups_by_first_char('L')
-    G_G = self.get_groups_by_first_char('G')
-    S_G = self.get_groups_by_first_char('S')
-    shifted_L_G = [self.shift_columns(sublist) for sublist in L_G]
-    shifted_G_G = [self.shift_columns(sublist) for sublist in G_G]
-    shifted_S_G = [self.shift_columns(sublist) for sublist in S_G]
-    self.draw_l_line(shifted_L_G)
-    self.draw_l_line(shifted_G_G)
-    self.draw_l_line(shifted_S_G, font_color='F2F2F2', background_color='F2F2F2')
+          # デバッグ用：BE列に行全体のデータ、BF列に JSON文字列
+          set_val_font(self.ws[f'BE{i+3}'], str(row))
+          if len(row) > 10:
+              set_val_font(self.ws[f'BF{i+3}'], row[10])
 
   def get_column_group_arrays(self):
     """列グループの配列を取得"""
