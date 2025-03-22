@@ -530,6 +530,22 @@ class ExcelFormatter:
                     'SPACER': 'スペース'
                 }.get(field_type, field_type)
                 set_val_font(self.ws[f'BB{i+3}'], field_type_ja)
+                # ドロップダウンの選択肢をBC列に表示
+                if field_type == 'DROP_DOWN' and len(row) > 10:
+                    options_str = row[10]
+                    options = []
+                    try:
+                        items = options_str.split(',')
+                        for item in items:
+                            if ': {' in item:
+                                option = item.split(': {')[0].strip()
+                                if option not in ['options', 'index', 'defaultValue'] and not option.startswith('"'):
+                                    options.append(option)
+                        if options:
+                            set_val_font(self.ws[f'BC{i+3}'], '選択肢: ' + ', '.join(options))
+                    except Exception as e:
+                        print(f"選択肢の解析エラー: {e}")
+
 
             field_start_col_letter = get_column_letter(start_index + 2)
             merge_range = f"{field_start_col_letter}{i+3}:R{i+3}"
