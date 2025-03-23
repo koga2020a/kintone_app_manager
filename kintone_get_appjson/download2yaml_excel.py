@@ -808,6 +808,112 @@ class KintoneApp:
                 bd_cell = ws.cell(row=row, column=column_index_from_string('BD'))
                 bd_cell.value = usage_text.strip()
                 bd_cell.font = formatter.font
+        
+        # JSファイル別にシートを作成して内容を表示
+        self._create_js_code_sheets(formatter.wb, field_codes_map)
+
+    def _create_js_code_sheets(self, workbook, field_codes_map):
+        """各JSファイルの内容を別シートに表示し、フィールドコードの使用箇所を強調表示する"""
+        js_dir = self.base_dir / 'javascript'
+        
+        # フィールドコードとその表示名の対応を取得
+        field_name_map = {}
+        try:
+            with open(self.json_dir / f"{self.appid}_form_fields.json", 'r', encoding='utf-8') as f:
+                fields_data = json.load(f)
+                properties = fields_data.get('properties', {})
+                for field_code, field_info in properties.items():
+                    label = field_info.get('label', field_code)
+                    field_name_map[field_code] = label
+        except Exception as e:
+            print(f"フィールド情報の読み込みエラー: {e}")
+        
+        # 背景色の設定
+        light_blue_fill = PatternFill(start_color="DEEBF7", end_color="DEEBF7", fill_type="solid")
+        light_green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+        dark_green_fill = PatternFill(start_color="C6E0B4", end_color="C6E0B4", fill_type="solid")
+        
+        # 各JSファイルに対してシートを作成
+        for js_file in js_dir.glob('*.js'):
+            # シート名はファイル名（拡張子なし）に設定（長さ制限に注意）
+            sheet_name = js_file.stem[:30]  # Excel制限: 31文字以内
+            
+            try:
+                # シートが既に存在する場合は削除
+                if sheet_name in workbook.sheetnames:
+                    ws = workbook[sheet_name]
+                    workbook.remove(ws)
+                
+                # 新しいシートを作成
+                ws = workbook.create_sheet(sheet_name)
+                
+                # ヘッダー行の設定
+                ws['A1'] = 'ファイル名:'
+                ws['B1'] = js_file.name
+                
+                # A1, B1に淡い水色の背景色を設定
+                ws['A1'].fill = light_blue_fill
+                ws['B1'].fill = light_blue_fill
+                
+                # テーブルヘッダーの設定
+                ws['A3'] = '行番号'
+                ws['A3'].alignment = Alignment(horizontal='center', vertical='center')
+                ws['B3'] = 'フィールド名'
+                ws['B3'].alignment = Alignment(horizontal='center', vertical='center')
+                ws['C3'] = 'フィールドコード'
+                ws['C3'].alignment = Alignment(horizontal='center', vertical='center')
+                ws['D3'] = 'ソースコード'
+                ws['D3'].alignment = Alignment(horizontal='center', vertical='center')
+                
+                # A3, B3, C3, D3に淡い緑色の背景色を設定
+                ws['A3'].fill = light_green_fill
+                ws['B3'].fill = light_green_fill
+                ws['C3'].fill = light_green_fill
+                ws['D3'].fill = dark_green_fill
+                
+                # 列幅の設定
+                ws.column_dimensions['A'].width = 10
+                ws.column_dimensions['B'].width = 34
+                ws.column_dimensions['C'].width = 34
+                ws.column_dimensions['D'].width = 140
+                
+                # ファイルの内容を読み込む
+                with open(js_file, 'r', encoding='utf-8', errors='replace') as f:
+                    lines = f.readlines()
+                
+                # 使用されているフィールドコードとその行番号を特定
+                field_usage = {}
+                for field_code, usage_info in field_codes_map.items():
+                    if js_file.name in usage_info:
+                        line_numbers = usage_info[js_file.name]
+                        for line_num in line_numbers:
+                            if line_num <= len(lines):
+                                if line_num not in field_usage:
+                                    field_usage[line_num] = []
+                                field_name = field_name_map.get(field_code, "")
+                                field_usage[line_num].append((field_name, field_code))
+                
+                # コードをセルに表示（5行目から開始）
+                for i, line in enumerate(lines, 1):
+                    row_num = i + 4  # 5行目から開始
+                    ws[f'A{row_num}'] = i
+                    
+                    if i in field_usage:
+                        # 同じ行に複数のフィールドがある場合は改行で区切る
+                        field_names = []
+                        field_codes = []
+                        for name, code in field_usage[i]:
+                            field_names.append(name)
+                            field_codes.append(code)
+                        
+                        ws[f'B{row_num}'] = '\n'.join(field_names)
+                        ws[f'C{row_num}'] = '\n'.join(field_codes)
+                    
+                    ws[f'D{row_num}'] = line.rstrip('\n\r')
+                
+                print(f"JSファイル {js_file.name} のシートを作成しました。")
+            except Exception as e:
+                print(f"シート {sheet_name} の作成中にエラーが発生しました: {e}")
 
     def export_all_records(self, get_all=False):
         url = f"https://{self.subdomain}.cybozu.com/k/v1/records.json"
