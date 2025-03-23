@@ -282,10 +282,26 @@ class ExcelExporter:
     self.output_file = output_file
     self.logger = logger
     self.group_data = {}  # グループ情報を保持する辞書を追加
+    self.domain_list = []  # 全ユーザーのドメイン一覧を収集
 
   def prepare_group_data(self, client: KintoneClient):
     """グループごとのユーザー情報を準備"""
     self.logger.info("グループ情報シート用のデータを準備中...")
+    
+    # 全ユーザーのドメイン一覧を収集
+    all_domains = set()
+    for df in self.dataframes.values():
+        # メールアドレスからドメイン部分を抽出して一覧に追加
+        domains = df['メールアドレス'].dropna().apply(lambda x: x.split('@')[-1] if '@' in x else '').unique()
+        all_domains.update([d for d in domains if d])
+    
+    # kirin.co.jpを先頭に、残りをアルファベット順にソート
+    ordered_domains = ['kirin.co.jp'] if 'kirin.co.jp' in all_domains else []
+    other_domains = sorted([d for d in all_domains if d != 'kirin.co.jp'])
+    ordered_domains.extend(other_domains)
+    
+    self.logger.info(f"検出されたドメイン一覧: {ordered_domains}")
+    self.domain_list = ordered_domains
     
     for group in self.group_names:
         group_users = []
@@ -322,34 +338,53 @@ class ExcelExporter:
       # グループ情報シートを新規作成
       if self.group_data:
         sheet_name = 'グループ情報'
-        start_row = 0
         # シートを追加
         workbook = writer.book
         ws = workbook.create_sheet(title=sheet_name)
         
+        # ドメイン情報を最初に追加
+        cell1 = ws.cell(row=1, column=1, value="ドメイン一覧")
+        cell1.alignment = Alignment(horizontal='center')
+        cell2 = ws.cell(row=2, column=1, value="ドメイン") 
+        cell2.alignment = Alignment(horizontal='center')
+        cell3 = ws.cell(row=2, column=2, value="背景色")
+        cell3.alignment = Alignment(horizontal='center')
+        
+        # ドメインとその色情報を設定
+        domain_colors = {}
+        start_row = 3
+        for i, domain in enumerate(self.domain_list):
+            cell = ws.cell(row=start_row+i, column=1, value=domain)
+            cell.alignment = Alignment(horizontal='right')
+            row = start_row+i
+            domain_colors[domain] = row
+        
+        # グループデータの出力開始位置を設定
+        start_row = start_row + len(self.domain_list) + 2  # ドメイン一覧の後に2行空ける
+        
         for group_name, df in self.group_data.items():
           # --- 1. グループ名行 ---
-          ws.cell(row=start_row+1, column=1, value="グループ: " + group_name)
+          ws.cell(row=start_row, column=1, value="グループ: " + group_name)
           start_row += 1
           
           # --- 2. ヘッダー行 ---
           headers = ["ユーザーID", "ログイン名", "氏名", "メールアドレス", "停止中"]
           for col, header in enumerate(headers, 1):
-            ws.cell(row=start_row+1, column=col, value=header)
+            ws.cell(row=start_row, column=col, value=header)
           start_row += 1
           
           # --- 3. データ行 ---
           if not df.empty:
             for r_idx, row in df.iterrows():
-              ws.cell(row=start_row+1, column=1, value=row['ユーザーID'])
-              ws.cell(row=start_row+1, column=2, value=row['ログイン名'])
-              ws.cell(row=start_row+1, column=3, value=row['氏名'])
-              ws.cell(row=start_row+1, column=4, value=row['メールアドレス'])
-              ws.cell(row=start_row+1, column=5, value=row['停止中'])
+              ws.cell(row=start_row, column=1, value=row['ユーザーID'])
+              ws.cell(row=start_row, column=2, value=row['ログイン名'])
+              ws.cell(row=start_row, column=3, value=row['氏名'])
+              ws.cell(row=start_row, column=4, value=row['メールアドレス'])
+              ws.cell(row=start_row, column=5, value=row['停止中'])
               start_row += 1
           else:
             # データがない場合は空行を出力
-            ws.cell(row=start_row+1, column=1, value="(データなし)")
+            ws.cell(row=start_row, column=1, value="(データなし)")
             start_row += 1
           
           # --- 4. セット間に空行を追加 ---
@@ -363,6 +398,7 @@ class ExcelExporter:
     self.logger.info("Excelファイルのフォーマットを設定中...")
     
     wb = load_workbook(self.output_file)
+    
     sheets = ['アクティブ', '停止中']
 
     # 単位変換：px → 文字数（openpyxlでは幅は文字数）
@@ -472,8 +508,8 @@ class ExcelExporter:
         
         # カラム幅の設定（A～E列）
         column_widths = {
-            'A': 15,  # ユーザーID
-            'B': 30,  # ログイン名
+            'A': 25,  # ユーザーID/ドメイン
+            'B': 30,  # ログイン名/背景色
             'C': 20,  # 氏名
             'D': 35,  # メールアドレス
             'E': 10   # 停止中
@@ -481,7 +517,58 @@ class ExcelExporter:
         for col, width in column_widths.items():
             ws.column_dimensions[col].width = width
         
-        # 背景・フォント設定
+        # ドメイン一覧のフォーマット
+        domain_title_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+        domain_title_font = Font(bold=True, color='FFFFFF')
+        
+        # ドメイン一覧ヘッダー
+        ws.cell(row=1, column=1).fill = domain_title_fill
+        ws.cell(row=1, column=1).font = domain_title_font
+        
+        # ドメイン一覧のヘッダー行
+        ws.cell(row=2, column=1).fill = PatternFill(start_color='D9E1F2', end_color='D9E1F2', fill_type='solid')
+        ws.cell(row=2, column=2).fill = PatternFill(start_color='D9E1F2', end_color='D9E1F2', fill_type='solid')
+        ws.cell(row=2, column=1).font = Font(bold=True)
+        ws.cell(row=2, column=2).font = Font(bold=True)
+        
+        # ドメインごとの色を設定
+        domain_color_map = {
+            'kirin.co.jp': 'FFFFFF',  # 白（デフォルト）
+            # その他のドメインには薄い色を設定
+            # 順番に異なる薄い色を割り当てる
+            0: 'F2F2F2',  # 薄いグレー
+            1: 'E6F0F8',  # 薄い青
+            2: 'FFF2CC',  # 薄い黄色
+            3: 'E2EFDA',  # 薄い緑
+            4: 'FCE4D6',  # 薄いオレンジ
+            5: 'E1D9F0',  # 薄い紫
+            6: 'DDEBF7',  # 別の薄い青
+            7: 'FFF7C9',  # 別の薄い黄色
+        }
+        
+        # ドメインリストを表示し、色をセット
+        color_idx = 0
+        domain_to_color = {}
+        for i, domain in enumerate(self.domain_list):
+            cell = ws.cell(row=3+i, column=1)
+            color_cell = ws.cell(row=3+i, column=2)
+            
+            # 特定のドメインは固定の色を使用、それ以外はインデックスベースで色を割り当て
+            if domain in domain_color_map:
+                color = domain_color_map[domain]
+            else:
+                color = domain_color_map.get(color_idx % len(domain_color_map), 'F2F2F2')
+                color_idx += 1
+            
+            # 色をセルに適用し、マップに保存
+            domain_to_color[domain] = color
+            color_sample = PatternFill(start_color=color, end_color=color, fill_type='solid')
+            color_cell.fill = color_sample
+            
+            # 表示のためにドメイン自体は太字に
+            cell.font = Font(bold=True)
+        
+        # 背景・フォント設定（グループ情報用）
         group_title_fill = PatternFill(start_color='5B9BD5', end_color='5B9BD5', fill_type='solid')
         group_title_font = Font(bold=True, color='FFFFFF')
         
@@ -491,11 +578,8 @@ class ExcelExporter:
         # 枠線（太線）の設定
         thick_side = Side(border_style='thick', color="000000")
         
-        # 非kirin.co.jpドメイン用の背景色
-        light_gray_fill = PatternFill(start_color='EEEEEE', end_color='EEEEEE', fill_type='solid')
-        
         # シート全体を走査して、各セットごとにフォーマットを適用する
-        row = 1
+        row = len(self.domain_list) + 5  # ドメイン一覧の後に開始行を設定
         while row <= ws.max_row:
             cell_val = ws.cell(row=row, column=1).value
             if isinstance(cell_val, str) and cell_val.startswith("グループ:"):
@@ -525,9 +609,15 @@ class ExcelExporter:
                     email_cell = ws.cell(row=row, column=4)
                     email_cell.alignment = Alignment(horizontal='right')
                     
-                    # メールアドレスが@kirin.co.jp以外なら背景色を薄いグレーに
-                    if email_cell.value and not email_cell.value.lower().endswith('@kirin.co.jp'):
-                        email_cell.fill = light_gray_fill
+                    # メールアドレスに基づいてセルの背景色を設定
+                    if email_cell.value:
+                        email_value = email_cell.value
+                        domain = email_value.split('@')[-1] if '@' in email_value else ''
+                        
+                        # マップからドメインの色を取得してセルに適用
+                        if domain in domain_to_color:
+                            color = domain_to_color[domain]
+                            email_cell.fill = PatternFill(start_color=color, end_color=color, fill_type='solid')
                     
                     # 停止中列を中央揃えに
                     ws.cell(row=row, column=5).alignment = Alignment(horizontal='center')
