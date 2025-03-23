@@ -835,8 +835,8 @@ class KintoneApp:
         
         # 各JSファイルに対してシートを作成
         for js_file in js_dir.glob('*.js'):
-            # シート名はファイル名（拡張子なし）に設定（長さ制限に注意）
-            sheet_name = js_file.stem[:30]  # Excel制限: 31文字以内
+            # シート名はファイル名の右端から31文字以内に設定
+            sheet_name = js_file.name[-31:]  # 右端から31文字以内
             
             try:
                 # シートが既に存在する場合は削除
