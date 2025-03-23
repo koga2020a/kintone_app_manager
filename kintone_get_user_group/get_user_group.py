@@ -16,6 +16,8 @@ import glob
 import zipfile
 import tempfile
 import os
+import random
+import colorsys
 
 class ArgumentParser:
   @staticmethod
@@ -354,7 +356,7 @@ class ExcelExporter:
         domain_colors = {}
         start_row = 3
         for i, domain in enumerate(self.domain_list):
-            cell = ws.cell(row=start_row+i, column=1, value=domain)
+            cell = ws.cell(row=start_row+i, column=1, value='@'+domain)
             cell.alignment = Alignment(horizontal='right')
             row = start_row+i
             domain_colors[domain] = row
@@ -532,41 +534,23 @@ class ExcelExporter:
         ws.cell(row=2, column=2).font = Font(bold=True)
         
         # ドメインごとの色を設定
-        domain_color_map = {
-            'kirin.co.jp': 'FFFFFF',  # 白（デフォルト）
-            # その他のドメインには薄い色を設定
-            # 順番に異なる薄い色を割り当てる
-            0: 'F2F2F2',  # 薄いグレー
-            1: 'E6F0F8',  # 薄い青
-            2: 'FFF2CC',  # 薄い黄色
-            3: 'E2EFDA',  # 薄い緑
-            4: 'FCE4D6',  # 薄いオレンジ
-            5: 'E1D9F0',  # 薄い紫
-            6: 'DDEBF7',  # 別の薄い青
-            7: 'FFF7C9',  # 別の薄い黄色
-        }
-        
-        # ドメインリストを表示し、色をセット
-        color_idx = 0
         domain_to_color = {}
+        generated_colors = generate_similar_colors(len(self.domain_list))
         for i, domain in enumerate(self.domain_list):
             cell = ws.cell(row=3+i, column=1)
             color_cell = ws.cell(row=3+i, column=2)
             
-            # 特定のドメインは固定の色を使用、それ以外はインデックスベースで色を割り当て
-            if domain in domain_color_map:
-                color = domain_color_map[domain]
-            else:
-                color = domain_color_map.get(color_idx % len(domain_color_map), 'F2F2F2')
-                color_idx += 1
-            
-            # 色をセルに適用し、マップに保存
+            color = generated_colors[i]
             domain_to_color[domain] = color
             color_sample = PatternFill(start_color=color, end_color=color, fill_type='solid')
             color_cell.fill = color_sample
             
-            # 表示のためにドメイン自体は太字に
             cell.font = Font(bold=True)
+            
+            # 罫線を追加
+            border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+            cell.border = border
+            color_cell.border = border
         
         # 背景・フォント設定（グループ情報用）
         group_title_fill = PatternFill(start_color='5B9BD5', end_color='5B9BD5', fill_type='solid')
@@ -643,6 +627,62 @@ class ExcelExporter:
     
     wb.save(self.output_file)
     self.logger.info(f"Excelファイル '{self.output_file}' のフォーマットを設定しました。")
+
+def generate_similar_colors(num_colors, seed=None):
+    """
+    元のカラーパレットに近い色合いの濃い色を生成する関数
+    """
+    if seed is not None:
+        random.seed(seed)
+    
+    # 元のカラーパレットを基準とした色相（HSV）
+    base_hues = [
+        0.58,   # 濃い青
+        0.15,   # 濃い黄色
+        0.33,   # 濃い緑
+        0.08,   # 濃いオレンジ
+        0.75,   # 濃い紫
+        0.55,   # 別の濃い青
+        0.17,   # 別の濃い黄色
+    ]
+    
+    # 新しい色を生成するための色相のリスト
+    hues = []
+    
+    # 必要な数の色相を用意
+    if num_colors <= len(base_hues):
+        hues = base_hues[:num_colors]
+    else:
+        hues = base_hues.copy()
+        remaining = num_colors - len(base_hues)
+        step = 1.0 / remaining
+        
+        for i in range(remaining):
+            new_hue = (i * step) % 1.0
+            min_distance = min(abs(new_hue - h) % 1.0 for h in hues)
+            if min_distance > 0.05:
+                hues.append(new_hue)
+            else:
+                hues.append(random.random())
+    
+    colors = {}
+    
+    # 各色相から色を生成
+    for i in range(num_colors):
+        hue_idx = i % len(hues)
+        hue = hues[hue_idx]
+        
+        # 彩度と明度を調整して濃い色に
+        saturation = random.uniform(0.4, 0.6)
+        value = random.uniform(0.7, 0.8)
+        
+        rgb = colorsys.hsv_to_rgb(hue, saturation, value)
+        rgb_int = tuple(int(255 * x) for x in rgb)
+        hex_color = '{:02X}{:02X}{:02X}'.format(*rgb_int)
+        
+        colors[i] = hex_color
+        
+    return colors
 
 def setup_logging(silent: bool, debug: bool) -> logging.Logger:
   logger = logging.getLogger("KintoneExporter")
