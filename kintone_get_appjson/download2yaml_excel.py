@@ -844,12 +844,9 @@ class KintoneApp:
                 long_lines_exist = any(len(line) > 1000 for line in lines)
                 
                 if long_lines_exist:
-                    # バックアップファイルを作成
-                    backup_file = js_file.with_suffix('.moto')
-                    shutil.copy2(js_file, backup_file)
-                    
-                    # 長い行を分割して書き直す
-                    with open(js_file, 'w', encoding='utf-8') as f:
+                    # 改行したファイルを作成
+                    kaigyo_file = js_file.with_name(js_file.stem + '.js_kaigyo.js')
+                    with open(kaigyo_file, 'w', encoding='utf-8') as f:
                         for line in lines:
                             if len(line) > 1000:
                                 # セミコロンで分割して改行
@@ -861,7 +858,7 @@ class KintoneApp:
                                 f.write(line)
                     
                     # 更新されたファイルを再読み込み
-                    with open(js_file, 'r', encoding='utf-8', errors='replace') as f:
+                    with open(kaigyo_file, 'r', encoding='utf-8', errors='replace') as f:
                         lines = f.readlines()
 
                 # シート名はファイル名の右端から31文字以内に設定
