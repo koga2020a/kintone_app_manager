@@ -835,10 +835,38 @@ class KintoneApp:
         
         # 各JSファイルに対してシートを作成
         for js_file in js_dir.glob('*.js'):
-            # シート名はファイル名の右端から31文字以内に設定
-            sheet_name = js_file.name[-31:]  # 右端から31文字以内
-            
             try:
+                # ファイルの内容を読み込む
+                with open(js_file, 'r', encoding='utf-8', errors='replace') as f:
+                    lines = f.readlines()
+                
+                # 1行が1000文字を超える行があるかチェック
+                long_lines_exist = any(len(line) > 1000 for line in lines)
+                
+                if long_lines_exist:
+                    # バックアップファイルを作成
+                    backup_file = js_file.with_suffix('.moto')
+                    shutil.copy2(js_file, backup_file)
+                    
+                    # 長い行を分割して書き直す
+                    with open(js_file, 'w', encoding='utf-8') as f:
+                        for line in lines:
+                            if len(line) > 1000:
+                                # セミコロンで分割して改行
+                                parts = line.split(';')
+                                for i, part in enumerate(parts):
+                                    if part.strip():
+                                        f.write(part.strip() + ';\n')
+                            else:
+                                f.write(line)
+                    
+                    # 更新されたファイルを再読み込み
+                    with open(js_file, 'r', encoding='utf-8', errors='replace') as f:
+                        lines = f.readlines()
+
+                # シート名はファイル名の右端から31文字以内に設定
+                sheet_name = js_file.name[-31:]
+                
                 # シートが既に存在する場合は削除
                 if sheet_name in workbook.sheetnames:
                     ws = workbook[sheet_name]
@@ -877,10 +905,6 @@ class KintoneApp:
                 ws.column_dimensions['C'].width = 34
                 ws.column_dimensions['D'].width = 140
                 
-                # ファイルの内容を読み込む
-                with open(js_file, 'r', encoding='utf-8', errors='replace') as f:
-                    lines = f.readlines()
-                
                 # 使用されているフィールドコードとその行番号を特定
                 field_usage = {}
                 for field_code, usage_info in field_codes_map.items():
@@ -893,23 +917,41 @@ class KintoneApp:
                                 field_name = field_name_map.get(field_code, "")
                                 field_usage[line_num].append((field_name, field_code))
                 
-                # コードをセルに表示（5行目から開始）
-                for i, line in enumerate(lines, 1):
-                    row_num = i + 4  # 5行目から開始
-                    ws[f'A{row_num}'] = i
+                # コードをセルに表示（500行を超える場合は対象行のみ表示）
+                if len(lines) > 500:
+                    # フィールドコードを含む行とその前後10行を特定
+                    target_lines = set()
+                    for field_code, usage_info in field_codes_map.items():
+                        if js_file.name in usage_info:
+                            for line_num in usage_info[js_file.name]:
+                                # 前後10行を含める
+                                for i in range(max(1, line_num - 10), min(len(lines) + 1, line_num + 11)):
+                                    target_lines.add(i)
                     
-                    if i in field_usage:
-                        # 同じ行に複数のフィールドがある場合は改行で区切る
+                    # ソートして順序を保持
+                    target_lines = sorted(target_lines)
+                else:
+                    target_lines = range(1, len(lines) + 1)
+
+                # 対象行を表示
+                for i, line_num in enumerate(target_lines, 1):
+                    row_num = i + 4  # 5行目から開始
+                    ws[f'A{row_num}'] = line_num
+                    
+                    if line_num in field_usage:
                         field_names = []
                         field_codes = []
-                        for name, code in field_usage[i]:
+                        for name, code in field_usage[line_num]:
                             field_names.append(name)
                             field_codes.append(code)
                         
                         ws[f'B{row_num}'] = '\n'.join(field_names)
                         ws[f'C{row_num}'] = '\n'.join(field_codes)
                     
-                    ws[f'D{row_num}'] = line.rstrip('\n\r')
+                    ws[f'D{row_num}'] = lines[line_num-1].rstrip('\n\r')
+                    for col in ['A', 'B', 'C', 'D']:
+                        if ws[f'{col}{row_num}'].value is not None:
+                            ws[f'{col}{row_num}'].font = Font(name='メイリオ', size=9)
                 
                 print(f"JSファイル {js_file.name} のシートを作成しました。")
             except Exception as e:
