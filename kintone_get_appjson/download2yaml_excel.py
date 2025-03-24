@@ -891,7 +891,11 @@ class KintoneApp:
                 ws['A1'] = 'ファイル名:'
                 ws['B1'] = js_file.name.replace('._kaigyo_.js', '.js')
                 if '._kaigyo_.' in js_file.name:
-                    ws['D1'] = f'※ 1行が1000文字を超えている為、適宜改行した {js_file.name} を使用しています。'
+                    ws.merge_cells('C1:D1')
+                    ws['C1'] = f'※ 1行が1000文字を超えている為、適宜改行した {js_file.name} を使用しています。'
+                    ws['C1'].fill = PatternFill(start_color="FFFF0000", end_color="FFFF0000", fill_type="solid")
+                    ws['C1'].font = Font(color="FFFFFF", bold=True)
+                    ws['C1'].alignment = Alignment(vertical='center')
                 
                 # A1, B1に淡い水色の背景色を設定
                 ws['A1'].fill = light_blue_fill
