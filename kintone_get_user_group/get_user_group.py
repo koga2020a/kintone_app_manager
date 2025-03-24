@@ -608,6 +608,11 @@ class ExcelExporter:
                     email_cell = ws.cell(row=row, column=4)
                     email_cell.alignment = Alignment(horizontal='right')
                     
+                    # E列が「●」のとき、B列の背景色を薄いグレーに設定
+                    if ws.cell(row=row, column=5).value == '●':
+                        b_cell = ws.cell(row=row, column=2)
+                        b_cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+                    
                     # メールアドレスに基づいてセルの背景色を設定
                     if email_cell.value:
                         email_value = email_cell.value
