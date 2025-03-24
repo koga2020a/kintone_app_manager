@@ -235,7 +235,13 @@ def prepare_kaigyo_files(js_dir):
             lines = f.readlines()
 
         # 1行が1000文字を超える行があるかチェック
-        long_lines_exist = any(len(line) > 1000 for line in lines)
+        long_lines_exist = False
+        for line in lines:
+            # 改行コードを除いた実際の文字列長をチェック
+            line_without_newline = line.rstrip('\n\r')
+            if len(line_without_newline) > 1000:
+                long_lines_exist = True
+                break
 
         if long_lines_exist:
             # 元のファイルを .js_moto にリネーム
