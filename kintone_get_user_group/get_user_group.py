@@ -542,8 +542,9 @@ class ExcelExporter:
             
             color = generated_colors[i]
             domain_to_color[domain] = color
-            color_sample = PatternFill(start_color=color, end_color=color, fill_type='solid')
-            color_cell.fill = color_sample
+            if domain != 'kirin.co.jp':
+                color_sample = PatternFill(start_color=color, end_color=color, fill_type='solid')
+                color_cell.fill = color_sample
             
             cell.font = Font(bold=True)
             
