@@ -235,13 +235,7 @@ def prepare_kaigyo_files(js_dir):
             lines = f.readlines()
 
         # 1行が1000文字を超える行があるかチェック
-        long_lines_exist = False
-        for line in lines:
-            # 改行コードを除いた実際の文字列長をチェック
-            line_without_newline = line.rstrip('\n\r')
-            if len(line_without_newline) > 1000:
-                long_lines_exist = True
-                break
+        long_lines_exist = any(len(line) > 10 for line in lines)
 
         if long_lines_exist:
             # 元のファイルを .js_moto にリネーム
@@ -252,7 +246,7 @@ def prepare_kaigyo_files(js_dir):
             kaigyo_file_path = file_path.with_name(file_path.stem + '._kaigyo_.js')
             with open(kaigyo_file_path, 'w', encoding='utf-8') as f:
                 for line in lines:
-                    if len(line) > 1000:
+                    if len(line) > 10:
                         parts = line.split(';')
                         for part in parts:
                             if part.strip():
@@ -829,6 +823,8 @@ class KintoneApp:
 
     def _write_js_field_code_usage(self, formatter):
         js_dir = self.base_dir / 'javascript'
+        # まず、.js_kaigyo.jsファイルを準備
+        prepare_kaigyo_files(js_dir)
         field_codes_map = scan_directory_for_field_codes_with_lines(js_dir)
         field_codes_yaml_path = self.base_dir / f"{self.appid}_field_codes_usage_at_javascript.yaml"
         with open(field_codes_yaml_path, 'w', encoding='utf-8') as f:
