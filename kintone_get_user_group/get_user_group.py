@@ -290,12 +290,15 @@ class ExcelExporter:
     """グループごとのユーザー情報を準備"""
     self.logger.info("グループ情報シート用のデータを準備中...")
     
-    # 全ユーザーのドメイン一覧を収集
+    # グループ情報シートに出現する全メールアドレスからドメイン一覧を収集
     all_domains = set()
-    for df in self.dataframes.values():
-        # メールアドレスからドメイン部分を抽出して一覧に追加
-        domains = df['メールアドレス'].dropna().apply(lambda x: x.split('@')[-1] if '@' in x else '').unique()
-        all_domains.update([d for d in domains if d])
+    for group in self.group_names:
+        for df in self.dataframes.values():
+            mask = df[group] == '●'
+            users = df[mask]
+            # メールアドレスからドメイン部分を抽出して一覧に追加
+            domains = users['メールアドレス'].dropna().apply(lambda x: x.split('@')[-1] if '@' in x else '').unique()
+            all_domains.update([d for d in domains if d])
     
     # kirin.co.jpを先頭に、残りをアルファベット順にソート
     ordered_domains = ['kirin.co.jp'] if 'kirin.co.jp' in all_domains else []
