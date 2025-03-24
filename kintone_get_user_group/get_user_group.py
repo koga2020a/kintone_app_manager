@@ -405,6 +405,7 @@ class ExcelExporter:
           
           # --- 4. セット間に空行を追加 ---
           start_row += 1
+          ws.row_dimensions[start_row-1].height = 30
         
         writer.sheets[sheet_name] = ws
     
