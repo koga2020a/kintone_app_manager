@@ -414,9 +414,16 @@ class ExcelExporter:
   def format_excel(self):
     self.logger.info("Excelファイルのフォーマットを設定中...")
     
-    wb = load_workbook(self.output_file)
-    
-    sheets = ['アクティブ', '停止中']
+    # 定数として列名を定義
+    COLUMN_USER_ID = 'A'       # ユーザーID
+    COLUMN_DISCREPANCY = 'B'    # 相違
+    COLUMN_STATUS = 'C'         # ステータス
+    COLUMN_LOGIN_NAME = 'D'     # ログイン名
+    COLUMN_NAME = 'E'           # 氏名
+    COLUMN_EMAIL = 'F'          # メールアドレス
+    COLUMN_LAST_ACCESS = 'G'    # 最終アクセス日
+    COLUMN_DAYS_SINCE = 'H'     # 経過日数
+    COLUMN_GROUPS = 'I'         # 所属グループ一覧
 
     # 単位変換：px → 文字数（openpyxlでは幅は文字数）
     def px_to_char(px):
@@ -429,94 +436,147 @@ class ExcelExporter:
     # 列F～Iのヘッダー背景色
     fg_fill = PatternFill(start_color='4C5D3C', end_color='4C5D3C', fill_type='solid')
 
-    # 定数として各列の列記号を定義
-    COLUMN_USER_ID = 'A'       # ユーザーID
-    COLUMN_DISCREPANCY = 'B'    # 相違
-    COLUMN_STATUS = 'C'         # ステータス
-    COLUMN_LOGIN_NAME = 'D'     # ログイン名
-    COLUMN_NAME = 'E'           # 氏名
-    COLUMN_EMAIL = 'F'          # メールアドレス
-    COLUMN_LAST_ACCESS = 'G'    # 最終アクセス日
-    COLUMN_DAYS_SINCE = 'H'     # 経過日数
-    COLUMN_GROUPS = 'I'         # 所属グループ一覧
+    wb = load_workbook(self.output_file)
+    sheets = ['アクティブ', '停止中']
 
-    # アクティブと停止中シートのフォーマット
-    for sheet in sheets:
-        self.logger.info(f"{sheet}シートのフォーマットを設定中...")
-        ws = wb[sheet]
-
-        # ヘッダー行（1行目）の各セルに背景色とフォントを設定（A～I列）
-        for col in [COLUMN_USER_ID, COLUMN_DISCREPANCY, COLUMN_STATUS, COLUMN_LOGIN_NAME,
-                    COLUMN_NAME, COLUMN_EMAIL, COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE, COLUMN_GROUPS]:
-            cell = ws[f'{col}1']
-            cell.fill = header_fill
-            cell.font = header_font
-
-        # 列幅の設定（ピクセル値を文字数に変換）
-        column_widths_px = {
-            COLUMN_USER_ID: 180,     # ユーザーID
-            COLUMN_DISCREPANCY: 80,   # 相違
-            COLUMN_STATUS: 80,       # ステータス
-            COLUMN_LOGIN_NAME: 270,  # ログイン名
-            COLUMN_NAME: 270,        # 氏名
-            COLUMN_EMAIL: 334,       # メールアドレス
-            COLUMN_LAST_ACCESS: 160, # 最終アクセス日
-            COLUMN_DAYS_SINCE: 60,   # 経過日数
-            COLUMN_GROUPS: 1195      # 所属グループ一覧
-        }
-        for col, px in column_widths_px.items():
-            ws.column_dimensions[col].width = px_to_char(px)
-
-        # グループごとの列をJ列以降に設定（幅は15）
-        start_col_letter = 'J'
-        start_col_num = column_index_from_string(start_col_letter)
-        for i, group in enumerate(self.group_names, start=start_col_num):
-            col_letter = get_column_letter(i)
-            ws.column_dimensions[col_letter].width = 15
-
-        # 列F～I（メールアドレス、最終アクセス日、経過日数、所属グループ一覧）のヘッダーに別背景色を設定
-        for col_letter in [COLUMN_EMAIL, COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE, COLUMN_GROUPS]:
-            cell = ws[f'{col_letter}1']
-            cell.fill = fg_fill
-
-        # データ行（2行目以降）のセル配置を設定
-        exclude_columns = [COLUMN_LOGIN_NAME, COLUMN_NAME, COLUMN_EMAIL]
-        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
-            for cell in row:
-                if cell.column_letter in [COLUMN_USER_ID, COLUMN_DISCREPANCY, COLUMN_STATUS,
-                                          COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE]:
-                    cell.alignment = Alignment(horizontal='center', vertical='center')
-                elif cell.column_letter in exclude_columns:
-                    cell.alignment = Alignment(horizontal='left', vertical='center')
+    # 監査ログの処理を最適化
+    last_access_dates = {}
+    try:
+        # 監査ログファイルの一括処理
+        audit_files = glob.glob('./audit/*.csv') + [
+            f for f in glob.glob('./audit/*.zip')
+        ]
+        
+        if audit_files:
+            # データフレームのリストを作成
+            audit_df_list = []
+            for file in audit_files:
+                if file.endswith('.zip'):
+                    with zipfile.ZipFile(file, 'r') as zip_ref:
+                        for csv_file in zip_ref.namelist():
+                            if csv_file.endswith('.csv'):
+                                with zip_ref.open(csv_file) as f:
+                                    df = pd.read_csv(f)
+                                    audit_df_list.append(df)
                 else:
-                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                    df = pd.read_csv(file)
+                    audit_df_list.append(df)
 
-        # 「Administrators」グループに所属している場合は、氏名（E列）を太字にする
-        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
-            group_cell = row[column_index_from_string(COLUMN_GROUPS) - 1]
-            if group_cell.value:
-                groups = [g.strip() for g in group_cell.value.split(',')]
-                if 'Administrators' in groups:
-                    name_cell = row[column_index_from_string(COLUMN_NAME) - 1]
-                    name_cell.font = Font(bold=True)
+            if audit_df_list:
+                # 全データを結合して処理
+                audit_df = pd.concat(audit_df_list, ignore_index=True)
+                audit_df['Date'] = pd.to_datetime(audit_df['Date'])
+                
+                # 監査ログ全体の最終日時を取得
+                latest_log_date = audit_df['Date'].max()
+                self.logger.info(f"監査ログの最終日時: {latest_log_date}")
+                
+                # ユーザー情報の抽出を効率化
+                mask = audit_df['User Name (account/uid)'].str.contains('/', na=False)
+                valid_records = audit_df[mask].copy()
+                
+                # UIDの抽出を一括処理
+                valid_records['uid'] = valid_records['User Name (account/uid)'].str.extract(r'/([^)]+)')
+                
+                # グループ化して最新の日付を取得
+                latest_access = valid_records.groupby('uid')['Date'].max()
+                
+                # 経過日数の計算（最終ログ日時基準）
+                days_since = (latest_log_date - latest_access).dt.days
+                
+                # 結果を辞書に格納
+                for uid, date in latest_access.items():
+                    last_access_dates[uid] = {
+                        'date': date,
+                        'days_since': days_since[uid]
+                    }
+                
+    except Exception as e:
+        self.logger.error(f"監査ログの読み込みに失敗しました: {e}")
 
-        # 所属グループ一覧内に「Administrators」が含まれている場合は除去
-        for row in ws.iter_rows(min_row=2, min_col=column_index_from_string(COLUMN_GROUPS),
-                                max_col=column_index_from_string(COLUMN_GROUPS), max_row=ws.max_row):
-            for cell in row:
-                if cell.value and 'Administrators' in cell.value:
-                    cell.value = cell.value.replace('Administrators', '').strip()
-                    if cell.value.endswith(','):
-                        cell.value = cell.value[:-1].strip()
+    # 進捗表示を追加
+    self.logger.info(f"監査ログの処理が完了しました。{len(last_access_dates)}件のアクセス記録を取得。")
 
-        # 最終アクセス日（G列）と経過日数（H列）は中央寄せ（念のため再設定）
-        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-            last_access_cell = row[column_index_from_string(COLUMN_LAST_ACCESS) - 1]
-            days_cell = row[column_index_from_string(COLUMN_DAYS_SINCE) - 1]
-            last_access_cell.alignment = Alignment(horizontal='center', vertical='center')
-            days_cell.alignment = Alignment(horizontal='center', vertical='center')
+    for sheet in sheets:
+      self.logger.info(f"{sheet}シートのフォーマットを設定中...")
+      ws = wb[sheet]
 
-        self.logger.info(f"{sheet}シートのフォーマット設定が完了しました。")
+      # ヘッダー行（1行目）の各セルに背景色とフォントを設定（A～I列）
+      for col in [COLUMN_USER_ID, COLUMN_DISCREPANCY, COLUMN_STATUS, COLUMN_LOGIN_NAME,
+                  COLUMN_NAME, COLUMN_EMAIL, COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE, COLUMN_GROUPS]:
+          cell = ws[f'{col}1']
+          cell.fill = header_fill
+          cell.font = header_font
+
+      # 列幅の設定（ピクセル値を文字数に変換）
+      column_widths_px = {
+          COLUMN_USER_ID: 180,     # ユーザーID
+          COLUMN_DISCREPANCY: 80,   # 相違
+          COLUMN_STATUS: 80,       # ステータス
+          COLUMN_LOGIN_NAME: 270,  # ログイン名
+          COLUMN_NAME: 270,        # 氏名
+          COLUMN_EMAIL: 334,       # メールアドレス
+          COLUMN_LAST_ACCESS: 160, # 最終アクセス日
+          COLUMN_DAYS_SINCE: 60,   # 経過日数
+          COLUMN_GROUPS: 1195      # 所属グループ一覧
+      }
+      for col, px in column_widths_px.items():
+          ws.column_dimensions[col].width = px_to_char(px)
+
+      # グループごとの列をJ列以降に設定（幅は15）
+      start_col_letter = 'J'
+      start_col_num = column_index_from_string(start_col_letter)
+      for i, group in enumerate(self.group_names, start=start_col_num):
+          col_letter = get_column_letter(i)
+          ws.column_dimensions[col_letter].width = 15
+
+      # 列F～I（メールアドレス、最終アクセス日、経過日数、所属グループ一覧）のヘッダーに別背景色を設定
+      for col_letter in [COLUMN_EMAIL, COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE, COLUMN_GROUPS]:
+          cell = ws[f'{col_letter}1']
+          cell.fill = fg_fill
+
+      # データ行（2行目以降）のセル配置を設定
+      exclude_columns = [COLUMN_LOGIN_NAME, COLUMN_NAME, COLUMN_EMAIL]
+      for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+          for cell in row:
+              if cell.column_letter in [COLUMN_USER_ID, COLUMN_DISCREPANCY, COLUMN_STATUS,
+                                        COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE]:
+                  cell.alignment = Alignment(horizontal='center', vertical='center')
+              elif cell.column_letter in exclude_columns:
+                  cell.alignment = Alignment(horizontal='left', vertical='center')
+              else:
+                  cell.alignment = Alignment(horizontal='center', vertical='center')
+
+      # 「Administrators」グループに所属している場合は、氏名（E列）を太字にする
+      for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+          group_cell = row[column_index_from_string(COLUMN_GROUPS) - 1]
+          if group_cell.value:
+              groups = [g.strip() for g in group_cell.value.split(',')]
+              if 'Administrators' in groups:
+                  name_cell = row[column_index_from_string(COLUMN_NAME) - 1]
+                  name_cell.font = Font(bold=True)
+
+      # 所属グループ一覧内に「Administrators」が含まれている場合は除去
+      for row in ws.iter_rows(min_row=2, min_col=column_index_from_string(COLUMN_GROUPS),
+                              max_col=column_index_from_string(COLUMN_GROUPS), max_row=ws.max_row):
+          for cell in row:
+              if cell.value and 'Administrators' in cell.value:
+                  cell.value = cell.value.replace('Administrators', '').strip()
+                  if cell.value.endswith(','):
+                      cell.value = cell.value[:-1].strip()
+
+      # 最終アクセス日と経過日数を設定
+      for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+        user_id = str(row[0].value)  # A列のユーザーID
+        if user_id in last_access_dates:
+          row[6].value = last_access_dates[user_id]['date'].strftime('%Y-%m-%d %H:%M:%S')
+          row[7].value = last_access_dates[user_id]['days_since']
+          
+          # セルの配置を中央に
+          row[6].alignment = Alignment(horizontal='center', vertical='center')
+          row[7].alignment = Alignment(horizontal='center', vertical='center')
+
+      self.logger.info(f"{sheet}シートのフォーマット設定が完了しました。")
 
     # グループ情報シートのフォーマット
     if 'グループ情報' in wb.sheetnames:
@@ -734,6 +794,9 @@ def main():
   args = ArgumentParser.parse_arguments()
   logger = setup_logging(args.silent, False)
 
+  # auditディレクトリの作成（カレントディレクトリ直下）
+  os.makedirs('./audit', exist_ok=True)
+  
   # 認証情報の初期化
   subdomain = args.subdomain
   username = args.username
