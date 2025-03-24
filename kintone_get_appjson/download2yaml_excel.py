@@ -232,10 +232,39 @@ def scan_directory_for_field_codes_with_lines(js_dir):
     """ディレクトリ内のJavaScriptファイルをスキャンしてフィールドコードの使用箇所をマップ化"""
     field_code_map = defaultdict(dict)
     for file_path in js_dir.glob('*.js'):
-        file_result = extract_field_codes_with_lines(file_path)
+        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()
+
+        # 1行が1000文字を超える行があるかチェック
+        long_lines_exist = any(len(line) > 1000 for line in lines)
+
+        if long_lines_exist:
+            # 元のファイルを .js_moto にリネーム
+            moto_file_path = file_path.with_suffix('.js_moto')
+            file_path.rename(moto_file_path)
+
+            # .js_kaigyo.js ファイルを生成
+            kaigyo_file_path = file_path.with_name(file_path.stem + '_kaigyo.js')
+            with open(kaigyo_file_path, 'w', encoding='utf-8') as f:
+                for line in lines:
+                    if len(line) > 1000:
+                        parts = line.split(';')
+                        for part in parts:
+                            if part.strip():
+                                f.write(part.strip() + ';\n')
+                    else:
+                        f.write(line)
+
+            # .js_kaigyo.js ファイルを使用してフィールドコードを抽出
+            file_result = extract_field_codes_with_lines(kaigyo_file_path)
+        else:
+            # 元のファイルを使用してフィールドコードを抽出
+            file_result = extract_field_codes_with_lines(file_path)
+
         if file_result:
             for field, lines in file_result.items():
                 field_code_map[field][file_path.name] = lines
+
     return dict(field_code_map)
 
 # ─── ExcelFormatter クラス ─────────────────────────────────────────────
