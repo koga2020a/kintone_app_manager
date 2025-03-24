@@ -313,13 +313,24 @@ class ExcelExporter:
             users = df[mask][['ユーザーID', 'ログイン名', '氏名', 'メールアドレス', 'ステータス']].copy()
             
             if not users.empty:
-                # メールアドレスを分解してソート用の列を作成
+                # メールアドレスを分解
                 users['domain'] = users['メールアドレス'].str.split('@').str[1]
                 users['localpart'] = users['メールアドレス'].str.split('@').str[0]
-                # ドメインでソート、次に@前のローカル部分でソート
-                users = users.sort_values(['domain', 'localpart'])
+                
+                # kirin.co.jpとその他でデータを分割
+                kirin_users = users[users['domain'] == 'kirin.co.jp'].copy()
+                other_users = users[users['domain'] != 'kirin.co.jp'].copy()
+                
+                # それぞれをソート
+                kirin_users = kirin_users.sort_values('localpart')
+                other_users = other_users.sort_values(['domain', 'localpart'])
+                
+                # 結合（kirinが上、その他が下）
+                users = pd.concat([kirin_users, other_users], ignore_index=True)
+                
                 # 一時的なソート用列を削除
                 users = users.drop(['domain', 'localpart'], axis=1)
+                
                 # 停止中のユーザーに「●」を追加
                 users['停止中'] = users['ステータス'].apply(lambda x: '●' if x == '停止中' else '')
                 group_users.append(users)
@@ -631,20 +642,20 @@ class ExcelExporter:
 
 def generate_similar_colors(num_colors, seed=None):
     """
-    元のカラーパレットに近い色合いの濃い色を生成する関数
+    元のカラーパレットに近い色合いの淡い色を生成する関数
     """
     if seed is not None:
         random.seed(seed)
     
     # 元のカラーパレットを基準とした色相（HSV）
     base_hues = [
-        0.58,   # 濃い青
-        0.15,   # 濃い黄色
-        0.33,   # 濃い緑
-        0.08,   # 濃いオレンジ
-        0.75,   # 濃い紫
-        0.55,   # 別の濃い青
-        0.17,   # 別の濃い黄色
+        0.58,   # 青
+        0.15,   # 黄色
+        0.33,   # 緑
+        0.08,   # オレンジ
+        0.75,   # 紫
+        0.55,   # 別の青
+        0.17,   # 別の黄色
     ]
     
     # 新しい色を生成するための色相のリスト
@@ -673,9 +684,9 @@ def generate_similar_colors(num_colors, seed=None):
         hue_idx = i % len(hues)
         hue = hues[hue_idx]
         
-        # 彩度と明度を調整して濃い色に
-        saturation = random.uniform(0.4, 0.6)
-        value = random.uniform(0.7, 0.8)
+        # 彩度と明度を調整して淡い色に
+        saturation = random.uniform(0.15, 0.25)  # 彩度を下げる（0.4-0.6 → 0.15-0.25）
+        value = random.uniform(0.90, 0.95)       # 明度を上げる（0.7-0.8 → 0.90-0.95）
         
         rgb = colorsys.hsv_to_rgb(hue, saturation, value)
         rgb_int = tuple(int(255 * x) for x in rgb)
