@@ -598,8 +598,8 @@ class ExcelExporter:
                         email_value = email_cell.value
                         domain = email_value.split('@')[-1] if '@' in email_value else ''
                         
-                        # マップからドメインの色を取得してセルに適用
-                        if domain in domain_to_color:
+                        # kirin.co.jp以外のドメインの場合のみ背景色を設定
+                        if domain in domain_to_color and domain != 'kirin.co.jp':
                             color = domain_to_color[domain]
                             email_cell.fill = PatternFill(start_color=color, end_color=color, fill_type='solid')
                     
