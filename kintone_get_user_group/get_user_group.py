@@ -285,11 +285,19 @@ class ExcelExporter:
     self.logger = logger
     self.group_data = {}  # グループ情報を保持する辞書を追加
     self.domain_list = []  # 全ユーザーのドメイン一覧を収集
+    self.user_groups = {}  # ユーザーIDと所属グループ一覧のマッピングを追加
 
   def prepare_group_data(self, client: KintoneClient):
     """グループごとのユーザー情報を準備"""
     self.logger.info("グループ情報シート用のデータを準備中...")
     
+    # ユーザーIDと所属グループ一覧のマッピングを作成
+    for df in self.dataframes.values():
+        for _, row in df.iterrows():
+            user_id = row['ユーザーID']
+            groups = row['所属グループ一覧']
+            self.user_groups[user_id] = groups
+
     # グループ情報シートに出現する全メールアドレスからドメイン一覧を収集
     all_domains = set()
     for group in self.group_names:
@@ -316,6 +324,9 @@ class ExcelExporter:
             users = df[mask][['ユーザーID', 'ログイン名', '氏名', 'メールアドレス', 'ステータス']].copy()
             
             if not users.empty:
+                # 所属グループ一覧を追加
+                users['所属グループ一覧'] = users['ユーザーID'].map(self.user_groups)
+                
                 # メールアドレスを分解
                 users['domain'] = users['メールアドレス'].str.split('@').str[1]
                 users['localpart'] = users['メールアドレス'].str.split('@').str[0]
@@ -341,7 +352,7 @@ class ExcelExporter:
         if group_users:
             self.group_data[group] = pd.concat(group_users, ignore_index=True)
         else:
-            self.group_data[group] = pd.DataFrame(columns=['ユーザーID', 'ログイン名', '氏名', 'メールアドレス', '停止中'])
+            self.group_data[group] = pd.DataFrame(columns=['ユーザーID', 'ログイン名', '氏名', 'メールアドレス', '停止中', '所属グループ一覧'])
 
   def export_to_excel(self):
     self.logger.info("Excelファイルに出力中...")
@@ -384,7 +395,7 @@ class ExcelExporter:
           start_row += 1
           
           # --- 2. ヘッダー行 ---
-          headers = ["ユーザーID", "ログイン名", "氏名", "メールアドレス", "停止中"]
+          headers = ["ユーザーID", "ログイン名", "氏名", "メールアドレス", "停止中", "所属グループ一覧"]
           for col, header in enumerate(headers, 1):
             ws.cell(row=start_row, column=col, value=header)
           start_row += 1
@@ -397,6 +408,7 @@ class ExcelExporter:
               ws.cell(row=start_row, column=3, value=row['氏名'])
               ws.cell(row=start_row, column=4, value=row['メールアドレス'])
               ws.cell(row=start_row, column=5, value=row['停止中'])
+              ws.cell(row=start_row, column=6, value=row['所属グループ一覧'])
               start_row += 1
           else:
             # データがない場合は空行を出力
@@ -583,13 +595,14 @@ class ExcelExporter:
         ws = wb['グループ情報']
         self.logger.info("グループ情報シートのフォーマットを設定中...")
         
-        # カラム幅の設定（A～E列）
+        # カラム幅の設定（A～F列）
         column_widths = {
             'A': 25,  # ユーザーID/ドメイン
             'B': 30,  # ログイン名/背景色
             'C': 20,  # 氏名
             'D': 35,  # メールアドレス
-            'E': 10   # 停止中
+            'E': 10,  # 停止中
+            'F': 80   # 所属グループ一覧
         }
         for col, width in column_widths.items():
             ws.column_dimensions[col].width = width
@@ -644,8 +657,8 @@ class ExcelExporter:
             cell_val = ws.cell(row=row, column=1).value
             if isinstance(cell_val, str) and cell_val.startswith("グループ:"):
                 block_start = row
-                # グループ名行の背景設定
-                for col in range(1, 6):  # A～E列
+                # グループ名行の背景設定（E列まで）
+                for col in range(1, 6):  # A～E列のみ
                     cell = ws.cell(row=row, column=col)
                     cell.fill = group_title_fill
                     cell.font = group_title_font
@@ -653,11 +666,19 @@ class ExcelExporter:
                 
                 # ヘッダー行の背景設定
                 if row <= ws.max_row and ws.cell(row=row, column=1).value == "ユーザーID":
+                    # A～E列は通常の青系の背景色
                     for col in range(1, 6):  # A～E列
                         cell = ws.cell(row=row, column=col)
                         cell.fill = header_fill
                         cell.font = header_font
-                        cell.alignment = Alignment(horizontal='center')  # ヘッダーを中央揃え
+                        cell.alignment = Alignment(horizontal='center')
+                    
+                    # F列（所属グループ一覧）は緑系の背景色
+                    group_list_fill = PatternFill(start_color='4C5D3C', end_color='4C5D3C', fill_type='solid')
+                    cell = ws.cell(row=row, column=6)  # F列
+                    cell.fill = group_list_fill
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal='center')
                     row += 1
                 else:
                     continue
@@ -689,9 +710,9 @@ class ExcelExporter:
                     row += 1
                 block_end = row - 1
                 
-                # ブロック全体に太線の枠線を設定
+                # ブロック全体に太線の枠線を設定（E列まで）
                 for r in range(block_start, block_end + 1):
-                    for c in range(1, 6):  # A～E列
+                    for c in range(1, 6):  # A～E列のみ
                         cell = ws.cell(row=r, column=c)
                         new_border = Border(
                             left=thick_side if c == 1 else cell.border.left,
