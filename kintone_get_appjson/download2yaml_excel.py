@@ -875,8 +875,9 @@ class KintoneApp:
                 with open(js_file, 'r', encoding='utf-8', errors='replace') as f:
                     lines = f.readlines()
                 
+                
                 # シート名はファイル名の右端から31文字以内に設定
-                sheet_name = js_file.name[-31:]
+                sheet_name = js_file.name.replace('._kaigyo_.js', '.js')[-31:]
                 
                 # シートが既に存在する場合は削除
                 if sheet_name in workbook.sheetnames:
@@ -888,7 +889,9 @@ class KintoneApp:
                 
                 # ヘッダー行の設定
                 ws['A1'] = 'ファイル名:'
-                ws['B1'] = js_file.name
+                ws['B1'] = js_file.name.replace('._kaigyo_.js', '.js')
+                if '._kaigyo_.' in js_file.name:
+                    ws['D1'] = f'※ 1行が1000文字を超えている為、適宜改行した {js_file.name} を使用しています。'
                 
                 # A1, B1に淡い水色の背景色を設定
                 ws['A1'].fill = light_blue_fill
