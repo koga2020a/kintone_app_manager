@@ -496,60 +496,20 @@ def create_notification_excel(app_id, general_data, record_data, reminder_data, 
     if reminder_data:
         create_reminder_notifications_sheet(wb, reminder_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
     
-    # 4. グループメンバー一覧シートの作成
-    if collected_group_codes:
-        create_group_members_sheet(wb, collected_group_codes, group_yaml_data, header_font, header_fill, header_alignment, thin_border)
-    
     # Excelファイルを保存
     wb.save(output_file)
     logging.info(f"通知設定をExcelに出力しました: {output_file}")
     
     return output_file
 
-def create_group_members_sheet(wb, group_codes, group_yaml_data, header_font, header_fill, header_alignment, thin_border):
-    """グループメンバー一覧シートを作成"""
-    ws = wb.create_sheet(title="グループメンバー一覧")
-    
-    # ヘッダー設定
-    headers = ["グループコード", "グループ名", "メンバー"]
-    for col_idx, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col_idx)
-        cell.value = header
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = header_alignment
-        cell.border = thin_border
-    
-    # データ行の設定
-    row_idx = 2
-    for group_code in sorted(set(group_codes)):
-        group_info = group_yaml_data.get(group_code, {})
-        group_name = group_info.get('name', '')
-        members = group_info.get('users', [])
-        
-        # メンバー情報を文字列に変換
-        members_str = '\n'.join([f"{m.get('name', '')}（{m.get('code', '')}）" for m in members])
-        
-        # データを行に設定
-        ws.cell(row=row_idx, column=1, value=group_code).border = thin_border
-        ws.cell(row=row_idx, column=2, value=group_name).border = thin_border
-        cell = ws.cell(row=row_idx, column=3, value=members_str)
-        cell.border = thin_border
-        cell.alignment = Alignment(wrap_text=True)
-        
-        row_idx += 1
-    
-    # 列幅の調整
-    ws.column_dimensions['A'].width = 20
-    ws.column_dimensions['B'].width = 30
-    ws.column_dimensions['C'].width = 50
-
 def create_general_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields=None, app_dir=None):
     """一般通知設定のシートを作成"""
     ws = wb.create_sheet(title="一般通知設定")
     
-    # A列の幅を22に設定
-    ws.column_dimensions["A"].width = 22
+    # A, B, C列の幅を330pxに設定（約47文字分）
+    ws.column_dimensions["A"].width = 47
+    ws.column_dimensions["B"].width = 47
+    ws.column_dimensions["C"].width = 47
     
     # ヘッダー行 - フィールドタイプ列を追加
     headers = ["No.", "通知先種別", "フィールドタイプ", "通知先", "フィールドタイプ", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
@@ -662,15 +622,9 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
         cell.border = thin_border
     
     # 列幅の調整
-    for col_idx in range(1, len(headers) + 1):
+    for col_idx in range(4, len(headers) + 1):  # A, B, C列は既に設定済みなので4列目から設定
         column_letter = get_column_letter(col_idx)
-        if col_idx == 1:  # No.列
-            ws.column_dimensions[column_letter].width = 5
-        elif col_idx == 2:  # 通知先タイプ列
-            ws.column_dimensions[column_letter].width = 12
-        elif col_idx == 3:  # フィールドタイプ列
-            ws.column_dimensions[column_letter].width = 15
-        elif col_idx == 4:  # 通知先列
+        if col_idx == 4:  # 通知先列
             ws.column_dimensions[column_letter].width = 20
         elif col_idx == 5:  # フィールドタイプ列（新しく追加）
             ws.column_dimensions[column_letter].width = 15
@@ -698,10 +652,10 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
         cell.alignment = header_alignment
         cell.border = thin_border
     
-    # 列幅の設定
-    ws.column_dimensions['A'].width = 5
-    ws.column_dimensions['B'].width = 30
-    ws.column_dimensions['C'].width = 40
+    # 列幅の設定 - A, B, C列を330pxに設定（約47文字分）
+    ws.column_dimensions['A'].width = 47
+    ws.column_dimensions['B'].width = 47
+    ws.column_dimensions['C'].width = 47
     ws.column_dimensions['D'].width = 15
     ws.column_dimensions['E'].width = 30
     ws.column_dimensions['F'].width = 15
@@ -799,8 +753,10 @@ def create_reminder_notifications_sheet(wb, data, header_font, header_fill, head
     """リマインダー通知設定のシートを作成"""
     ws = wb.create_sheet(title="リマインダー通知設定")
     
-    # A列の幅を22に設定
-    ws.column_dimensions["A"].width = 22
+    # A, B, C列の幅を330pxに設定（約47文字分）
+    ws.column_dimensions["A"].width = 47
+    ws.column_dimensions["B"].width = 47
+    ws.column_dimensions["C"].width = 47
     
     # ヘッダー行 - フィールド名列を追加
     headers = ["No.", "リマインダー名", "通知先タイプ", "フィールド名", "通知先", "日時フィールド", "条件", "通知タイミング"]
@@ -930,15 +886,9 @@ def create_reminder_notifications_sheet(wb, data, header_font, header_fill, head
                 row_idx += 1
     
     # 列幅の調整
-    for col_idx in range(1, len(headers) + 1):
+    for col_idx in range(4, len(headers) + 1):  # A, B, C列は既に設定済みなので4列目から設定
         column_letter = get_column_letter(col_idx)
-        if col_idx == 1:  # No.列
-            ws.column_dimensions[column_letter].width = 5
-        elif col_idx == 2:  # リマインダー名列
-            ws.column_dimensions[column_letter].width = 20
-        elif col_idx == 3:  # 通知先タイプ列
-            ws.column_dimensions[column_letter].width = 12
-        elif col_idx == 4:  # フィールドタイプ列
+        if col_idx == 4:  # フィールドタイプ列
             ws.column_dimensions[column_letter].width = 15
         elif col_idx == 5:  # 通知先列
             ws.column_dimensions[column_letter].width = 20
