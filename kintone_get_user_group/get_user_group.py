@@ -209,6 +209,9 @@ class DataProcessor:
     active_group_data = {}
     inactive_group_data = {}
     
+    # ユーザーリスト用のデータ構造を準備
+    user_list_data = {}
+    
     # まず全グループの基本情報を設定
     for group in filtered_groups:
       group_code = group.get('code')
@@ -224,11 +227,24 @@ class DataProcessor:
       # グループ内のユーザー情報を取得
       users_in_group = self.client.get_users_in_group(group_code)
       for user in users_in_group:
+        user_code = user.get('code')
         user_info = {
-          'username': user.get('code'),
+          'username': user_code,
           'email': user.get('email'),
           'id': str(user.get('id'))
         }
+        
+        # ユーザーリストデータにも追加
+        if user_code not in user_list_data:
+          user_list_data[user_code] = {
+            'code': user_code,
+            'username': user_code,
+            'name': user.get('name', user_code),
+            'email': user.get('email', ''),
+            'valid': user.get('valid', True),
+            'isDisabled': not user.get('valid', True)
+          }
+        
         # ユーザーの状態を確認
         if user.get('valid', True):
           active_group_data[group_code]['users'].append(user_info)
@@ -239,11 +255,24 @@ class DataProcessor:
     active_everyone_users = []
     inactive_everyone_users = []
     for user in self.users:
+      user_code = user.get('code')
       user_info = {
-        'username': user.get('code'),
+        'username': user_code,
         'email': user.get('email'),
         'id': str(user.get('id'))
       }
+      
+      # ユーザーリストデータにも追加
+      if user_code not in user_list_data:
+        user_list_data[user_code] = {
+          'code': user_code,
+          'username': user_code,
+          'name': user.get('name', user_code),
+          'email': user.get('email', ''),
+          'valid': user.get('valid', True),
+          'isDisabled': not user.get('valid', True)
+        }
+      
       if user.get('valid', True):
         active_everyone_users.append(user_info)
       else:
@@ -273,7 +302,11 @@ class DataProcessor:
       with open('group_user_list_NoUse.yaml', 'w', encoding='utf-8') as f:
         yaml.dump(inactive_group_data, f, allow_unicode=True, sort_keys=False)
       
-      self.logger.info("group_user_list.yaml と group_user_list_NoUse.yaml の生成が完了しました。")
+      # ユーザーリストファイルを出力
+      with open('user_list.yaml', 'w', encoding='utf-8') as f:
+        yaml.dump(user_list_data, f, allow_unicode=True, sort_keys=False)
+      
+      self.logger.info("group_user_list.yaml、group_user_list_NoUse.yaml、user_list.yaml の生成が完了しました。")
     except Exception as e:
       self.logger.error(f"YAMLファイルの生成中にエラーが発生しました: {e}")
 

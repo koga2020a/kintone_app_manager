@@ -214,9 +214,19 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
         ws.cell(row=row_idx, column=1).font = Font(bold=True)
         row_idx += 1
         
-        # GROUP_SELECTの場合はヘッダーを追加
+        # USER_SELECTまたはGROUP_SELECTの場合はヘッダーを追加
         if field_type == 'GROUP_SELECT':
-            headers = ["グループ", "所属ユーザー"]
+            headers = ["グループ", "アカウント名", "メールアドレス", "停止中"]
+            for col_idx, header in enumerate(headers, 1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                cell.value = header
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+                cell.border = thin_border
+            row_idx += 1
+        elif field_type == 'USER_SELECT':
+            headers = ["", "アカウント名", "メールアドレス", "停止中"]
             for col_idx, header in enumerate(headers, 1):
                 cell = ws.cell(row=row_idx, column=col_idx)
                 cell.value = header
@@ -238,6 +248,7 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
             is_json = False
             json_objects = []
             group_codes = []  # GROUP_SELECT用のグループコード
+            user_codes = []   # USER_SELECT用のユーザーコード
             
             # 特定のフィールドタイプは常に縦表示
             force_vertical = False
@@ -261,11 +272,15 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                                     # GROUP_SELECTの場合、グループコードを保存
                                     if field_type == 'GROUP_SELECT':
                                         group_codes.append(obj['code'])
+                                    # USER_SELECTの場合、ユーザーコードを保存
+                                    elif field_type == 'USER_SELECT':
+                                        user_codes.append(obj['code'])
                         
                         # 2. USER_SELECTで特殊な形式の場合（例：user@example.com）
                         elif field_type == 'USER_SELECT' and '@' in value:
-                            # 単純なメールアドレスの場合はそのまま表示
+                            # メールアドレスをユーザーコードとして扱う
                             json_objects.append(value)
+                            user_codes.append(value)
                         
                         if json_objects:
                             is_json = True
@@ -292,30 +307,96 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
             
             # GROUP_SELECTの特別処理
             if field_type == 'GROUP_SELECT' and is_json and group_yaml_data:
-                # グループごとに行を作成
+                # グループごとにユーザーを表示
                 for idx, (group_obj, group_code) in enumerate(zip(json_objects, group_codes)):
-                    # A列: グループ情報
-                    cell_a = ws.cell(row=current_row, column=1)
-                    cell_a.value = group_obj
-                    cell_a.border = thin_border
-                    
-                    # B列: グループメンバー
                     group_info = group_yaml_data.get(group_code, {})
                     members = group_info.get('users', [])
                     
-                    if members:
+                    if not members:
+                        # メンバーがいない場合、グループ情報だけ表示
+                        cell_a = ws.cell(row=current_row, column=1)
+                        cell_a.value = group_obj
+                        cell_a.border = thin_border
+                        
+                        for col in range(2, 5):
+                            ws.cell(row=current_row, column=col).border = thin_border
+                        
+                        current_row += 1
+                    else:
                         # メンバーをソート
                         members = sorted(members, key=lambda x: x.get('username', ''))
-                        members_str = '\n'.join([f"{m.get('username', '')}（{m.get('email', '')}）" for m in members])
                         
-                        cell_b = ws.cell(row=current_row, column=2)
-                        cell_b.value = members_str
-                        cell_b.border = thin_border
-                        cell_b.alignment = Alignment(wrap_text=True)
+                        # 各メンバーを行に表示
+                        for i, member in enumerate(members):
+                            # A列: グループ情報（最初のメンバーの行のみ）
+                            cell_a = ws.cell(row=current_row, column=1)
+                            if i == 0:
+                                cell_a.value = group_obj
+                            cell_a.border = thin_border
+                            
+                            # B列: アカウント名
+                            cell_b = ws.cell(row=current_row, column=2)
+                            cell_b.value = member.get('username', '')
+                            cell_b.border = thin_border
+                            
+                            # C列: メールアドレス
+                            cell_c = ws.cell(row=current_row, column=3)
+                            cell_c.value = member.get('email', '')
+                            cell_c.border = thin_border
+                            
+                            # D列: 停止中かどうか
+                            cell_d = ws.cell(row=current_row, column=4)
+                            cell_d.value = "停止中" if member.get('isDisabled', False) else ""
+                            cell_d.border = thin_border
+                            
+                            current_row += 1
+            
+            # USER_SELECTの特別処理
+            elif field_type == 'USER_SELECT' and is_json:
+                # ユーザー情報の取得（group_yaml_dataからユーザー情報を探す）
+                all_users = {}
+                if group_yaml_data:
+                    for group_data in group_yaml_data.values():
+                        for user in group_data.get('users', []):
+                            user_code = user.get('code', '')
+                            if user_code:
+                                all_users[user_code] = user
+                
+                # user_list.yamlからもユーザー情報を取得
+                user_yaml_data = load_user_list_yaml(Path(SCRIPT_DIR).parent)
+                if user_yaml_data:
+                    for user_code, user_info in user_yaml_data.items():
+                        if user_code not in all_users:
+                            all_users[user_code] = user_info
+                
+                # ユーザーごとに行を作成
+                for i, (user_obj, user_code) in enumerate(zip(json_objects, user_codes)):
+                    # A列: 空白
+                    cell_a = ws.cell(row=current_row, column=1)
+                    cell_a.border = thin_border
+                    
+                    # ユーザー情報をユーザーデータから取得
+                    user_info = all_users.get(user_code, {})
+                    
+                    # B列: アカウント名
+                    cell_b = ws.cell(row=current_row, column=2)
+                    cell_b.value = user_info.get('username', user_code)
+                    cell_b.border = thin_border
+                    
+                    # C列: メールアドレス
+                    cell_c = ws.cell(row=current_row, column=3)
+                    cell_c.value = user_info.get('email', '')
+                    cell_c.border = thin_border
+                    
+                    # D列: 停止中かどうか
+                    cell_d = ws.cell(row=current_row, column=4)
+                    cell_d.value = "停止中" if user_info.get('isDisabled', False) else ""
+                    cell_d.border = thin_border
                     
                     current_row += 1
-            # 縦表示が強制されている場合
-            elif force_vertical:
+            
+            # 通常のJSONまたは強制縦表示（既にUSER_SELECTとGROUP_SELECTは処理済み）
+            elif force_vertical and field_type != 'USER_SELECT' and field_type != 'GROUP_SELECT':
                 # 強制縦表示 - 1行に1つずつ表示
                 if not json_objects:
                     # JSON解析に失敗した場合、元の値を使用
@@ -330,14 +411,16 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                         cell.value = obj_value
                         cell.border = thin_border
                         current_row += 1
-            # 通常のJSON表示（USER_SELECTなど縦表示）
-            elif is_vertical_display and is_json:
+            
+            # 通常のJSON表示（ORGANIZATION_SELECTなど縦表示）
+            elif is_vertical_display and is_json and field_type != 'USER_SELECT' and field_type != 'GROUP_SELECT':
                 # 縦方向に1行に1つずつ表示
                 for obj_value in json_objects:
                     cell = ws.cell(row=current_row, column=1)
                     cell.value = obj_value
                     cell.border = thin_border
                     current_row += 1
+            
             # 通常のデータ処理（横表示）
             elif not is_json:
                 col = col_count % 5 + 1
@@ -348,6 +431,7 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                 col_count += 1
                 if col_count % 5 == 0:
                     current_row += 1
+            
             # その他のJSON風データ（横表示）
             else:
                 col = col_count % 5 + 1
@@ -441,7 +525,7 @@ def create_group_members_sheet(wb, group_codes, group_yaml_data, header_font, he
     for group_code in sorted(set(group_codes)):
         group_info = group_yaml_data.get(group_code, {})
         group_name = group_info.get('name', '')
-        members = group_info.get('members', [])
+        members = group_info.get('users', [])
         
         # メンバー情報を文字列に変換
         members_str = '\n'.join([f"{m.get('name', '')}（{m.get('code', '')}）" for m in members])
