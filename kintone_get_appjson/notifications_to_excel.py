@@ -189,7 +189,7 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
     
     # 見出し
     row_idx += 2
-    ws.cell(row=row_idx, column=1).value = "フィールド値参考一覧"
+    ws.cell(row=row_idx, column=1).value = "通知先種別：フィールド グループ一覧"
     ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
     row_idx += 1
     
@@ -911,7 +911,7 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
     
     # グループ情報の見出し
     row_idx += 2
-    ws.cell(row=row_idx, column=1).value = "グループメンバー情報"
+    ws.cell(row=row_idx, column=1).value = "通知先種別：グループ メンバー情報"
     ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
     row_idx += 1
     
@@ -928,20 +928,12 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
         group_name = group_info.get('name', '不明なグループ')
         members = group_info.get('users', [])
         
-        # メンバーをメールアドレスのドメインでソート
-        members = sorted(members, key=lambda x: (
-            x.get('email', '').split('@')[1] if '@' in x.get('email', '') else '',
-            x.get('email', '')
-        ))
-        
-        # グループ名の行
-        ws.cell(row=row_idx, column=1).value = f"グループ: {group_name} ({group_code})"
-        ws.cell(row=row_idx, column=1).font = Font(bold=True)
-        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=3)
-        row_idx += 1
+        # メンバーをユーザー名でソート
+        members = sorted(members, key=lambda x: x.get('username', ''))
+
         
         # ヘッダー行
-        headers = ["No.", "ユーザー名", "メールアドレス"]
+        headers = ["グループ", "アカウント名", "メールアドレス", "停止中"]
         for col_idx, header in enumerate(headers, 1):
             cell = ws.cell(row=row_idx, column=col_idx)
             cell.value = header
@@ -952,26 +944,27 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
         row_idx += 1
         
         # メンバー行
-        current_domain = None
-        for i, user in enumerate(members, 1):
-            email = user.get('email', '')
-            domain = email.split('@')[1] if '@' in email else ''
+        for i, user in enumerate(members):
+            # A列: グループ情報（最初のメンバーの行のみ）
+            cell_a = ws.cell(row=row_idx, column=1)
+            if i == 0:
+                cell_a.value = f"{  group_name} ({group_code})"
+            cell_a.border = thin_border
             
-            # ドメインが変わったら空行を挿入
-            if domain and domain != current_domain and current_domain is not None:
-                row_idx += 1
-            current_domain = domain
+            # B列: アカウント名
+            cell_b = ws.cell(row=row_idx, column=2)
+            cell_b.value = user.get('username', '')
+            cell_b.border = thin_border
             
-            row_data = [
-                i,
-                user.get('username', '不明'),
-                email
-            ]
+            # C列: メールアドレス
+            cell_c = ws.cell(row=row_idx, column=3)
+            cell_c.value = user.get('email', '')
+            cell_c.border = thin_border
             
-            for col_idx, value in enumerate(row_data, 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                cell.value = value
-                cell.border = thin_border
+            # D列: 停止中かどうか
+            cell_d = ws.cell(row=row_idx, column=4)
+            cell_d.value = "停止中" if user.get('isDisabled', False) else ""
+            cell_d.border = thin_border
             
             row_idx += 1
         
