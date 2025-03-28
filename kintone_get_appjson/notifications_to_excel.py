@@ -214,14 +214,13 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
         for value in values:
             # JSON風の値かどうかをチェック
             is_json = False
-            formatted_value = value
+            json_objects = []
             
             # JSON風の値の処理 - {'code': '...', 'name': '...'} 形式をチェック
             if isinstance(value, str) and value.startswith('{') and 'code' in value and 'name' in value:
                 try:
                     # 複数のJSONオブジェクトが連結されている可能性があるので分割して処理
                     json_parts = value.replace('}, {', '}|{').split('|')
-                    json_objects = []
                     
                     for part in json_parts:
                         # 文字列をPythonの辞書に変換
@@ -231,7 +230,6 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                             json_objects.append(f"{obj['name']}({obj['code']})")
                     
                     if json_objects:
-                        formatted_value = ", ".join(json_objects)
                         is_json = True
                 except:
                     # JSON解析に失敗した場合は通常の値として扱う
@@ -248,18 +246,15 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                 if col_count % 5 == 0:
                     current_row += 1
             else:
-                # JSON風データの処理 - 整形した値を表示
-                col = col_count % 5 + 1
-                cell = ws.cell(row=current_row, column=col)
-                cell.value = formatted_value
-                cell.border = thin_border
-                
-                col_count += 1
-                if col_count % 5 == 0:
+                # JSON風データの処理 - 縦方向に1行に1グループずつ表示
+                for obj_value in json_objects:
+                    cell = ws.cell(row=current_row, column=1)
+                    cell.value = obj_value
+                    cell.border = thin_border
                     current_row += 1
         
         # 次のフィールドのために行を進める
-        if col_count % 5 != 0:
+        if not is_json and col_count % 5 != 0:
             current_row += 1
         row_idx = current_row + 1
     
