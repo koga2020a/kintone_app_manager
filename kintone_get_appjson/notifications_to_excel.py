@@ -142,7 +142,130 @@ def find_group_user_list_yaml():
     logging.warning("group_user_list.yaml が見つかりませんでした")
     return None
 
-def create_notification_excel(app_id, general_data, record_data, reminder_data, form_fields=None, output_file=None):
+def load_field_values_from_tsv(app_dir, field_code):
+    """
+    records.tsvファイルからフィールドの値一覧を取得する
+    
+    Args:
+        app_dir: アプリディレクトリ
+        field_code: フィールドコード
+    
+    Returns:
+        list: フィールドの値一覧
+    """
+    try:
+        tsv_files = list(app_dir.glob("*_records.tsv"))
+        if not tsv_files:
+            logging.warning(f"records.tsvファイルが見つかりません: {app_dir}")
+            return []
+        
+        # 最新のTSVファイルを使用
+        tsv_file = max(tsv_files, key=lambda f: f.stat().st_mtime)
+        logging.info(f"records.tsvファイルを読み込みます: {tsv_file}")
+        
+        # TSVファイルを読み込む
+        df = pd.read_csv(tsv_file, sep='\t', encoding='utf-8')
+        
+        # フィールドコードがヘッダーに含まれるか確認
+        if field_code not in df.columns:
+            logging.warning(f"フィールド '{field_code}' がTSVファイルに見つかりません")
+            return []
+        
+        # フィールドの値を取得し、ユニークなもののみ抽出
+        values = df[field_code].dropna().unique().tolist()
+        
+        # 最大100個まで
+        return values[:100]
+    
+    except Exception as e:
+        logging.warning(f"TSVファイルの読み込みに失敗しました: {e}")
+        return []
+
+def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border):
+    """フィールド値の参考一覧を追加"""
+    
+    if not field_codes or not app_dir:
+        return row_idx
+    
+    # 見出し
+    row_idx += 2
+    ws.cell(row=row_idx, column=1).value = "フィールド値参考一覧"
+    ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
+    row_idx += 1
+    
+    # 重複するフィールドコードを除去
+    unique_field_codes = list(set(field_codes))
+    
+    for field_code in unique_field_codes:
+        values = load_field_values_from_tsv(app_dir, field_code)
+        
+        if not values:
+            continue
+        
+        # フィールドの見出し
+        ws.cell(row=row_idx, column=1).value = f"フィールド: {field_code}"
+        ws.cell(row=row_idx, column=1).font = Font(bold=True)
+        row_idx += 1
+        
+        # データを表示するための準備
+        col_count = 0
+        current_row = row_idx
+        
+        for value in values:
+            # JSON風の値かどうかをチェック
+            is_json = False
+            formatted_value = value
+            
+            # JSON風の値の処理 - {'code': '...', 'name': '...'} 形式をチェック
+            if isinstance(value, str) and value.startswith('{') and 'code' in value and 'name' in value:
+                try:
+                    # 複数のJSONオブジェクトが連結されている可能性があるので分割して処理
+                    json_parts = value.replace('}, {', '}|{').split('|')
+                    json_objects = []
+                    
+                    for part in json_parts:
+                        # 文字列をPythonの辞書に変換
+                        part = part.replace("'", '"')  # シングルクォートをダブルクォートに変換
+                        obj = json.loads(part)
+                        if 'code' in obj and 'name' in obj:
+                            json_objects.append(f"{obj['name']}({obj['code']})")
+                    
+                    if json_objects:
+                        formatted_value = ", ".join(json_objects)
+                        is_json = True
+                except:
+                    # JSON解析に失敗した場合は通常の値として扱う
+                    pass
+            
+            # 通常のデータ処理
+            if not is_json:
+                col = col_count % 5 + 1
+                cell = ws.cell(row=current_row, column=col)
+                cell.value = value
+                cell.border = thin_border
+                
+                col_count += 1
+                if col_count % 5 == 0:
+                    current_row += 1
+            else:
+                # JSON風データの処理 - 整形した値を表示
+                col = col_count % 5 + 1
+                cell = ws.cell(row=current_row, column=col)
+                cell.value = formatted_value
+                cell.border = thin_border
+                
+                col_count += 1
+                if col_count % 5 == 0:
+                    current_row += 1
+        
+        # 次のフィールドのために行を進める
+        if col_count % 5 != 0:
+            current_row += 1
+        row_idx = current_row + 1
+    
+    return row_idx
+
+def create_notification_excel(app_id, general_data, record_data, reminder_data, form_fields=None, output_file=None, app_dir=None):
     """通知設定をExcelに出力する"""
     
     if output_file is None:
@@ -178,11 +301,11 @@ def create_notification_excel(app_id, general_data, record_data, reminder_data, 
     
     # 1. 一般通知設定のシート作成
     if general_data:
-        create_general_notifications_sheet(wb, general_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields)
+        create_general_notifications_sheet(wb, general_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields, app_dir)
     
     # 2. レコード通知設定のシート作成
     if record_data:
-        create_record_notifications_sheet(wb, record_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields)
+        create_record_notifications_sheet(wb, record_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields, app_dir)
     
     # 3. リマインダー通知設定のシート作成
     if reminder_data:
@@ -236,7 +359,7 @@ def create_group_members_sheet(wb, group_codes, group_yaml_data, header_font, he
     ws.column_dimensions['B'].width = 30
     ws.column_dimensions['C'].width = 50
 
-def create_general_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields=None):
+def create_general_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields=None, app_dir=None):
     """一般通知設定のシートを作成"""
     ws = wb.create_sheet(title="一般通知設定")
     
@@ -261,6 +384,9 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     
     # グループの通知先を収集
     group_codes = []
+    
+    # フィールドコードの収集
+    field_codes = []
     
     for row_idx, notify in enumerate(notifications, 2):
         entity = notify.get("entity", {})
@@ -303,6 +429,9 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
             if form_fields and entity_code in form_fields.get('properties', {}):
                 field_info = form_fields['properties'][entity_code]
                 form_field_type = field_info.get('type', '')
+            
+            # FIELD_ENTITYの場合、フィールドコードを収集
+            field_codes.append(entity_code)
         else:
             type_jp = entity_type
         
@@ -366,8 +495,12 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     # グループメンバー情報を追加
     if group_codes:
         row_idx = add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
+    
+    # フィールド値の参考一覧を追加
+    if field_codes and app_dir:
+        row_idx = add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border)
 
-def create_record_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields=None):
+def create_record_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields=None, app_dir=None):
     """レコード通知設定のシートを作成"""
     ws = wb.create_sheet(title="レコード通知設定")
     
@@ -393,6 +526,9 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
     row = 2
     current_notification_id = None
     first_row_of_notification = None
+    
+    # フィールドコードの収集
+    field_codes = []
     
     for idx, notification in enumerate(data.get('notifications', []), 1):
         title = notification.get('title', '')
@@ -456,6 +592,21 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
                     end_row=row - 1,
                     end_column=col
                 )
+        
+        # フィールドコードの収集
+        for target in notification.get('targets', []):
+            entity = target.get('entity', {})
+            entity_type = entity.get('type', '')
+            entity_code = entity.get('code', '')
+            
+            # FIELD_ENTITYの場合、フィールドコードを収集
+            if entity_type == "FIELD_ENTITY":
+                field_codes.append(entity_code)
+    
+    # フィールド値の参考一覧を追加
+    if field_codes and app_dir:
+        row_idx = row
+        row_idx = add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border)
     
     return ws
 
@@ -741,7 +892,7 @@ def main():
             output_file = Path(output_file)
         
         # Excelファイルの作成
-        excel_file = create_notification_excel(args.app_id, general_data, record_data, reminder_data, form_fields, output_file)
+        excel_file = create_notification_excel(args.app_id, general_data, record_data, reminder_data, form_fields, output_file, app_dir)
         
         logger.info(f"通知設定を {excel_file} に出力しました")
         print(f"通知設定を {excel_file} に出力しました")
