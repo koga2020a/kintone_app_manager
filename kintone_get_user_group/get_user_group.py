@@ -283,14 +283,21 @@ class ExcelExporter:
     self.group_names = group_names
     self.output_file = output_file
     self.logger = logger
-    self.group_data = {}  # グループ情報を保持する辞書を追加
-    self.domain_list = []  # 全ユーザーのドメイン一覧を収集
-    self.user_groups = {}  # ユーザーIDと所属グループ一覧のマッピングを追加
+    self.group_data = {}
+    self.domain_list = []
+    self.user_groups = {}
+    self.user_domain = None  # メインドメインを保持する変数を追加
 
   def prepare_group_data(self, client: KintoneClient):
     """グループごとのユーザー情報を準備"""
     self.logger.info("グループ情報シート用のデータを準備中...")
     
+    # 設定ファイルからメインドメインを取得
+    config = load_config('.kintone.env')
+    self.user_domain = config.get('user_domain', '')
+    if not self.user_domain:
+        self.logger.warning("user_domainが設定されていません。")
+
     # ユーザーIDと所属グループ一覧のマッピングを作成
     for df in self.dataframes.values():
         for _, row in df.iterrows():
@@ -308,9 +315,9 @@ class ExcelExporter:
             domains = users['メールアドレス'].dropna().apply(lambda x: x.split('@')[-1] if '@' in x else '').unique()
             all_domains.update([d for d in domains if d])
     
-    # kirin.co.jpを先頭に、残りをアルファベット順にソート
-    ordered_domains = ['kirin.co.jp'] if 'kirin.co.jp' in all_domains else []
-    other_domains = sorted([d for d in all_domains if d != 'kirin.co.jp'])
+    # メインドメインを先頭に、残りをアルファベット順にソート
+    ordered_domains = [self.user_domain] if self.user_domain in all_domains else []
+    other_domains = sorted([d for d in all_domains if d != self.user_domain])
     ordered_domains.extend(other_domains)
     
     self.logger.info(f"検出されたドメイン一覧: {ordered_domains}")
@@ -331,16 +338,16 @@ class ExcelExporter:
                 users['domain'] = users['メールアドレス'].str.split('@').str[1]
                 users['localpart'] = users['メールアドレス'].str.split('@').str[0]
                 
-                # kirin.co.jpとその他でデータを分割
-                kirin_users = users[users['domain'] == 'kirin.co.jp'].copy()
-                other_users = users[users['domain'] != 'kirin.co.jp'].copy()
+                # メインドメインとその他でデータを分割
+                main_users = users[users['domain'] == self.user_domain].copy()
+                other_users = users[users['domain'] != self.user_domain].copy()
                 
                 # それぞれをソート
-                kirin_users = kirin_users.sort_values('localpart')
+                main_users = main_users.sort_values('localpart')
                 other_users = other_users.sort_values(['domain', 'localpart'])
                 
-                # 結合（kirinが上、その他が下）
-                users = pd.concat([kirin_users, other_users], ignore_index=True)
+                # 結合（メインドメインが上、その他が下）
+                users = pd.concat([main_users, other_users], ignore_index=True)
                 
                 # 一時的なソート用列を削除
                 users = users.drop(['domain', 'localpart'], axis=1)
@@ -637,7 +644,7 @@ class ExcelExporter:
             
             color = generated_colors[i]
             domain_to_color[domain] = color
-            if domain != 'kirin.co.jp':
+            if domain != self.user_domain:
                 color_sample = PatternFill(start_color=color, end_color=color, fill_type='solid')
                 color_cell.fill = color_sample
             
@@ -707,8 +714,8 @@ class ExcelExporter:
                         email_value = email_cell.value
                         domain = email_value.split('@')[-1] if '@' in email_value else ''
                         
-                        # kirin.co.jp以外のドメインの場合のみ背景色を設定
-                        if domain in domain_to_color and domain != 'kirin.co.jp':
+                        # メインドメイン以外のドメインの場合のみ背景色を設定
+                        if domain in domain_to_color and domain != self.user_domain:
                             color = domain_to_color[domain]
                             email_cell.fill = PatternFill(start_color=color, end_color=color, fill_type='solid')
                     
