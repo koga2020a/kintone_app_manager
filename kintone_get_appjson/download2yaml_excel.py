@@ -645,7 +645,12 @@ class KintoneApp:
 
     def fetch_data(self, url, headers):
         try:
-            response = requests.get(url, headers=headers)
+            # レコード通知設定の場合、POSTメソッドとリクエストボディが必要
+            if "perRecord.json" in url:
+                data = {"app": self.appid}
+                response = requests.get(url, headers=headers, json=data)
+            else:
+                response = requests.get(url, headers=headers)
             response.raise_for_status()
             content = self.convert_to_utf8_if_sjis(response.content)
             return json.loads(content)
@@ -743,8 +748,8 @@ class KintoneApp:
             "settings": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/settings.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
             "process_management": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/status.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
             "plugins": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/plugins.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
-            "app_notifications": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/notifications/perRecord.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
-            "record_notifications": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/notifications/perRecord.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
+            "app_notifications": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/notifications/general.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
+            "record_notifications": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/notifications/perRecord.json", "auth_type": "X-Cybozu-API-Token"},
             "reminder_notifications": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/notifications/reminder.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
             "app_acl": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/acl.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
             "actions": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/actions.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},

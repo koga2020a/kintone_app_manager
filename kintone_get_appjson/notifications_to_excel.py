@@ -169,36 +169,28 @@ def create_notification_excel(app_id, general_data, record_data, reminder_data, 
         bottom=Side(style='thin')
     )
     
-    # group_user_list.yamlからグループ情報を読み込む（マスターデータとして利用）
+    # group_user_list.yamlからグループ情報を読み込む
     group_yaml_path = find_group_user_list_yaml()
     group_yaml_data = load_group_yaml_data(group_yaml_path)
     
-    # 収集したグループコードのリスト（シート下部にグループ情報表示用）
+    # 収集したグループコードのリスト
     collected_group_codes = []
     
     # 1. 一般通知設定のシート作成
     if general_data:
         create_general_notifications_sheet(wb, general_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
-        
-        # 一般通知シートにグループ情報テーブル追加
-        general_sheet = wb.active
-        add_group_info_table(general_sheet, group_yaml_data, collected_group_codes, header_font, header_fill, header_alignment, thin_border)
     
     # 2. レコード通知設定のシート作成
     if record_data:
         create_record_notifications_sheet(wb, record_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
-        
-        # レコード通知シートにグループ情報テーブル追加
-        record_sheet = wb["レコード通知設定"]
-        add_group_info_table(record_sheet, group_yaml_data, collected_group_codes, header_font, header_fill, header_alignment, thin_border)
     
     # 3. リマインダー通知設定のシート作成
     if reminder_data:
         create_reminder_notifications_sheet(wb, reminder_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
-        
-        # リマインダー通知シートにグループ情報テーブル追加
-        reminder_sheet = wb["リマインダー通知設定"]
-        add_group_info_table(reminder_sheet, group_yaml_data, collected_group_codes, header_font, header_fill, header_alignment, thin_border)
+    
+    # 4. グループメンバー一覧シートの作成
+    if collected_group_codes:
+        create_group_members_sheet(wb, collected_group_codes, group_yaml_data, header_font, header_fill, header_alignment, thin_border)
     
     # Excelファイルを保存
     wb.save(output_file)
@@ -206,82 +198,43 @@ def create_notification_excel(app_id, general_data, record_data, reminder_data, 
     
     return output_file
 
-def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes):
-    """グループメンバー情報の表を追加"""
-
-    if not group_codes or not group_yaml_data:
-        return row_idx
+def create_group_members_sheet(wb, group_codes, group_yaml_data, header_font, header_fill, header_alignment, thin_border):
+    """グループメンバー一覧シートを作成"""
+    ws = wb.create_sheet(title="グループメンバー一覧")
     
-    # グループ情報の見出し
-    row_idx += 2
-    ws.cell(row=row_idx, column=1).value = "グループメンバー情報"
-    ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
-    row_idx += 1
+    # ヘッダー設定
+    headers = ["グループコード", "グループ名", "メンバー"]
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.value = header
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
     
-    # 重複するグループコードを除去
-    unique_group_codes = list(set(group_codes))
-    
-    for group_code in unique_group_codes:
-        # グループが存在しない場合はスキップ
-        if group_code not in group_yaml_data:
-            logging.warning(f"グループ {group_code} の情報が見つかりません")
-            continue
+    # データ行の設定
+    row_idx = 2
+    for group_code in sorted(set(group_codes)):
+        group_info = group_yaml_data.get(group_code, {})
+        group_name = group_info.get('name', '')
+        members = group_info.get('members', [])
         
-        group_info = group_yaml_data[group_code]
-        group_name = group_info.get('name', '不明なグループ')
-        members = group_info.get('users', [])
+        # メンバー情報を文字列に変換
+        members_str = '\n'.join([f"{m.get('name', '')}（{m.get('code', '')}）" for m in members])
         
-        # メンバーをメールアドレスのドメインでソート
-        members = sorted(members, key=lambda x: (
-            x.get('email', '').split('@')[1] if '@' in x.get('email', '') else '',
-            x.get('email', '')
-        ))
+        # データを行に設定
+        ws.cell(row=row_idx, column=1, value=group_code).border = thin_border
+        ws.cell(row=row_idx, column=2, value=group_name).border = thin_border
+        cell = ws.cell(row=row_idx, column=3, value=members_str)
+        cell.border = thin_border
+        cell.alignment = Alignment(wrap_text=True)
         
-        # グループ名の行
-        ws.cell(row=row_idx, column=1).value = f"グループ: {group_name} ({group_code})"
-        ws.cell(row=row_idx, column=1).font = Font(bold=True)
-        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=3)
-        row_idx += 1
-        
-        # ヘッダー行
-        headers = ["No.", "ユーザー名", "メールアドレス"]
-        for col_idx, header in enumerate(headers, 1):
-            cell = ws.cell(row=row_idx, column=col_idx)
-            cell.value = header
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = header_alignment
-            cell.border = thin_border
-        row_idx += 1
-        
-        # メンバー行
-        current_domain = None
-        for i, user in enumerate(members, 1):
-            email = user.get('email', '')
-            domain = email.split('@')[1] if '@' in email else ''
-            
-            # ドメインが変わったら空行を挿入
-            if domain and domain != current_domain and current_domain is not None:
-                row_idx += 1
-            current_domain = domain
-            
-            row_data = [
-                i,
-                user.get('username', '不明'),
-                email
-            ]
-            
-            for col_idx, value in enumerate(row_data, 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                cell.value = value
-                cell.border = thin_border
-            
-            row_idx += 1
-        
-        # グループ間の空白
         row_idx += 1
     
-    return row_idx
+    # 列幅の調整
+    ws.column_dimensions['A'].width = 20
+    ws.column_dimensions['B'].width = 30
+    ws.column_dimensions['C'].width = 50
 
 def create_general_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes):
     """一般通知設定のシートを作成"""
@@ -408,165 +361,69 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
     """レコード通知設定のシートを作成"""
     ws = wb.create_sheet(title="レコード通知設定")
     
-    # A列の幅を22に設定
-    ws.column_dimensions["A"].width = 22
-    
-    # ヘッダー行 - フィールドタイプ列を追加
-    headers = ["No.", "通知先タイプ", "フィールドタイプ", "通知先", "通知条件", "条件内容"]
-    for col_idx, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col_idx)
-        cell.value = header
+    # ヘッダー設定
+    headers = ["No.", "通知タイトル", "通知条件", "通知先種別", "通知先", "下位組織継承"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = header_alignment
         cell.border = thin_border
     
-    # データ行
-    row_idx = 2
-    notifications = data.get("notifications", [])
+    # 列幅の設定
+    ws.column_dimensions['A'].width = 5
+    ws.column_dimensions['B'].width = 30
+    ws.column_dimensions['C'].width = 40
+    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['E'].width = 30
+    ws.column_dimensions['F'].width = 15
     
-    # データ行の背景色を設定
-    light_blue_fill = PatternFill(start_color="EBF1F5", end_color="EBF1F5", fill_type="solid")
-    light_green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
-    
-    # グループの通知先を収集
-    group_codes = []
-    
-    for notify_idx, notify in enumerate(notifications, 1):
-        entity = notify.get("entity", {})
-        entity_type = entity.get("type", "")
-        entity_code = entity.get("code", "")
+    # データの書き込み
+    row = 2
+    for idx, notification in enumerate(data.get('notifications', []), 1):
+        title = notification.get('title', '')
+        condition = notification.get('filterCond', '')
         
-        # グループコードを収集
-        if entity_type == "GROUP":
-            group_codes.append(entity_code)
-        
-        # 通知先タイプを日本語に変換
-        type_jp = ""
-        field_type = ""
-        if entity_type == "USER":
-            type_jp = "ユーザー"
-        elif entity_type == "GROUP":
-            type_jp = "グループ"
-        elif entity_type == "ORGANIZATION":
-            type_jp = "組織"
-        elif entity_type == "FIELD_ENTITY":
-            type_jp = "フィールド"
-            # フィールドタイプの取得
-            if "type" in entity:
-                if entity.get("type") == "CREATOR":
-                    field_type = "作成者"
-                elif entity.get("type") == "MODIFIER":
-                    field_type = "更新者"
-                elif entity.get("type") == "USER_SELECT":
-                    field_type = "ユーザー選択"
-                elif entity.get("type") == "GROUP_SELECT":
-                    field_type = "グループ選択"
-                elif entity.get("type") == "ORGANIZATION_SELECT":
-                    field_type = "組織選択"
-                else:
-                    field_type = entity.get("type", "")
-        else:
-            type_jp = entity_type
-        
-        # 通知条件
-        conditions = notify.get("condition", {}).get("conditions", [])
-        
-        # 通知先ごとに背景色を交互に変更
-        notify_fill = light_blue_fill if notify_idx % 2 == 1 else light_green_fill
-        
-        if not conditions:
-            # 条件がない場合は1行だけ出力
-            row_data = [
-                notify_idx,  # No.
-                type_jp,  # 通知先タイプ
-                field_type,  # フィールドタイプ - 新しい列
-                entity_code,  # 通知先
-                "条件なし",  # 通知条件
-                "",  # 条件内容
+        # 通知先ごとに行を作成
+        for target in notification.get('targets', []):
+            entity = target.get('entity', {})
+            entity_type = entity.get('type', '')
+            entity_code = entity.get('code', '')
+            include_subs = target.get('includeSubs', False)
+            
+            # グループコードを収集
+            if entity_type == "GROUP":
+                collected_group_codes.append(entity_code)
+            
+            # 通知先タイプを日本語に変換
+            type_jp = ""
+            if entity_type == "USER":
+                type_jp = "ユーザー"
+            elif entity_type == "GROUP":
+                type_jp = "グループ"
+            elif entity_type == "ORGANIZATION":
+                type_jp = "組織"
+            elif entity_type == "FIELD_ENTITY":
+                type_jp = "フィールド"
+            
+            # データを書き込み
+            cells = [
+                (row, 1, idx),
+                (row, 2, title),
+                (row, 3, condition),
+                (row, 4, type_jp),
+                (row, 5, entity_code),
+                (row, 6, "継承する" if include_subs else "継承しない")
             ]
             
-            for col_idx, value in enumerate(row_data, 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                cell.value = value
+            for r, c, value in cells:
+                cell = ws.cell(row=r, column=c, value=value)
                 cell.border = thin_border
-                cell.fill = notify_fill
+                cell.alignment = Alignment(vertical='center', wrap_text=True)
             
-            row_idx += 1
-        else:
-            # 条件ごとに行を作成
-            for cond_idx, condition in enumerate(conditions):
-                cond_type = condition.get("type", "")
-                field_code = condition.get("field", {}).get("code", "")
-                operator = condition.get("operator", "")
-                value = condition.get("value", "")
-                
-                # 条件タイプを日本語に変換
-                if cond_type == "CONDITION":
-                    cond_type_jp = "フィールド条件"
-                elif cond_type == "STATUS":
-                    cond_type_jp = "ステータス条件"
-                else:
-                    cond_type_jp = cond_type
-                
-                # 演算子を日本語に変換
-                operator_jp = operator
-                if operator == "=":
-                    operator_jp = "等しい"
-                elif operator == "!=":
-                    operator_jp = "等しくない"
-                elif operator == ">":
-                    operator_jp = "より大きい"
-                elif operator == "<":
-                    operator_jp = "より小さい"
-                elif operator == ">=":
-                    operator_jp = "以上"
-                elif operator == "<=":
-                    operator_jp = "以下"
-                elif operator == "in":
-                    operator_jp = "含む"
-                elif operator == "not in":
-                    operator_jp = "含まない"
-                
-                # 条件内容を整形
-                condition_content = f"{field_code} {operator_jp} {value}"
-                
-                row_data = [
-                    notify_idx if cond_idx == 0 else "",  # No.（最初の条件の行のみ表示）
-                    type_jp if cond_idx == 0 else "",  # 通知先タイプ（最初の条件の行のみ表示）
-                    field_type if cond_idx == 0 else "",  # フィールドタイプ（最初の条件の行のみ表示）
-                    entity_code if cond_idx == 0 else "",  # 通知先（最初の条件の行のみ表示）
-                    cond_type_jp,  # 通知条件
-                    condition_content,  # 条件内容
-                ]
-                
-                for col_idx, value in enumerate(row_data, 1):
-                    cell = ws.cell(row=row_idx, column=col_idx)
-                    cell.value = value
-                    cell.border = thin_border
-                    cell.fill = notify_fill
-                
-                row_idx += 1
+            row += 1
     
-    # 列幅の調整
-    for col_idx in range(1, len(headers) + 1):
-        column_letter = get_column_letter(col_idx)
-        if col_idx == 1:  # No.列
-            ws.column_dimensions[column_letter].width = 5
-        elif col_idx == 2:  # 通知先タイプ列
-            ws.column_dimensions[column_letter].width = 12
-        elif col_idx == 3:  # フィールドタイプ列
-            ws.column_dimensions[column_letter].width = 15
-        elif col_idx == 4:  # 通知先列
-            ws.column_dimensions[column_letter].width = 20
-        elif col_idx == 5:  # 通知条件列
-            ws.column_dimensions[column_letter].width = 15
-        else:  # 条件内容列
-            ws.column_dimensions[column_letter].width = 40
-    
-    # グループメンバー情報を追加
-    if group_codes:
-        row_idx = add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
+    return ws
 
 def create_reminder_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes):
     """リマインダー通知設定のシートを作成"""
@@ -726,62 +583,82 @@ def create_reminder_notifications_sheet(wb, data, header_font, header_fill, head
     if group_codes:
         row_idx = add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
 
-def add_group_info_table(ws, group_yaml_data, collected_group_codes, header_font, header_fill, header_alignment, thin_border):
-    """シートの下部にグループ情報テーブルを追加する"""
-    if not collected_group_codes or not group_yaml_data:
-        return
+def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes):
+    """グループメンバー情報の表を追加"""
+
+    if not group_codes or not group_yaml_data:
+        return row_idx
     
-    # 現在のデータの最終行を取得
-    max_row = ws.max_row
+    # グループ情報の見出し
+    row_idx += 2
+    ws.cell(row=row_idx, column=1).value = "グループメンバー情報"
+    ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
+    row_idx += 1
     
-    # 2行空けてからテーブルを開始
-    start_row = max_row + 3
+    # 重複するグループコードを除去
+    unique_group_codes = list(set(group_codes))
     
-    # タイトル行
-    ws.cell(row=start_row, column=1, value="グループ情報一覧").font = Font(bold=True, size=14)
-    start_row += 2
-    
-    # 各グループについてテーブルを作成
-    for group_code in collected_group_codes:
+    for group_code in unique_group_codes:
+        # グループが存在しない場合はスキップ
         if group_code not in group_yaml_data:
-            logging.warning(f"グループコード {group_code} が group_user_list.yaml に見つかりません。")
+            logging.warning(f"グループ {group_code} の情報が見つかりません")
             continue
-            
+        
         group_info = group_yaml_data[group_code]
-        group_name = group_info.get('name', group_code)
+        group_name = group_info.get('name', '不明なグループ')
+        members = group_info.get('users', [])
         
-        # グループヘッダー
-        ws.cell(row=start_row, column=1, value=f"グループ名: {group_name} (コード: {group_code})").font = Font(bold=True, size=12)
-        start_row += 1
+        # メンバーをメールアドレスのドメインでソート
+        members = sorted(members, key=lambda x: (
+            x.get('email', '').split('@')[1] if '@' in x.get('email', '') else '',
+            x.get('email', '')
+        ))
         
-        # ユーザーテーブルのヘッダー
-        headers = ["ユーザー名", "メールアドレス"]
-        for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=start_row, column=col, value=header)
+        # グループ名の行
+        ws.cell(row=row_idx, column=1).value = f"グループ: {group_name} ({group_code})"
+        ws.cell(row=row_idx, column=1).font = Font(bold=True)
+        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=3)
+        row_idx += 1
+        
+        # ヘッダー行
+        headers = ["No.", "ユーザー名", "メールアドレス"]
+        for col_idx, header in enumerate(headers, 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            cell.value = header
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = header_alignment
             cell.border = thin_border
+        row_idx += 1
         
-        start_row += 1
+        # メンバー行
+        current_domain = None
+        for i, user in enumerate(members, 1):
+            email = user.get('email', '')
+            domain = email.split('@')[1] if '@' in email else ''
+            
+            # ドメインが変わったら空行を挿入
+            if domain and domain != current_domain and current_domain is not None:
+                row_idx += 1
+            current_domain = domain
+            
+            row_data = [
+                i,
+                user.get('username', '不明'),
+                email
+            ]
+            
+            for col_idx, value in enumerate(row_data, 1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                cell.value = value
+                cell.border = thin_border
+            
+            row_idx += 1
         
-        # ユーザーデータの行
-        users = group_info.get('users', [])
-        if not users:
-            ws.cell(row=start_row, column=1, value="(ユーザーなし)").border = thin_border
-            ws.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=2)
-            start_row += 1
-        else:
-            for user in users:
-                username = user.get('username', '')
-                email = user.get('email', '')
-                
-                ws.cell(row=start_row, column=1, value=username).border = thin_border
-                ws.cell(row=start_row, column=2, value=email).border = thin_border
-                start_row += 1
-        
-        # グループ間に空行を入れる
-        start_row += 2
+        # グループ間の空白
+        row_idx += 1
+    
+    return row_idx
 
 def main():
     """メイン関数"""
