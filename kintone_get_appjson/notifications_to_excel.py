@@ -181,7 +181,7 @@ def load_field_values_from_tsv(app_dir, field_code):
         logging.warning(f"TSVファイルの読み込みに失敗しました: {e}")
         return []
 
-def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border, form_fields=None):
+def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border, form_fields=None, group_yaml_data=None):
     """フィールド値の参考一覧を追加"""
     
     if not field_codes or not app_dir:
@@ -214,6 +214,18 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
         ws.cell(row=row_idx, column=1).font = Font(bold=True)
         row_idx += 1
         
+        # GROUP_SELECTの場合はヘッダーを追加
+        if field_type == 'GROUP_SELECT':
+            headers = ["グループ", "所属ユーザー"]
+            for col_idx, header in enumerate(headers, 1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                cell.value = header
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+                cell.border = thin_border
+            row_idx += 1
+        
         # 縦に表示するタイプのフィールドかどうか
         is_vertical_display = field_type in ['USER_SELECT', 'GROUP_SELECT', 'ORGANIZATION_SELECT']
         
@@ -225,35 +237,108 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
             # JSON風の値かどうかをチェック
             is_json = False
             json_objects = []
+            group_codes = []  # GROUP_SELECT用のグループコード
             
-            # JSON風の値の処理 - {'code': '...', 'name': '...'} 形式をチェック
-            if isinstance(value, str) and value.startswith('{') and 'code' in value and 'name' in value:
+            # 特定のフィールドタイプは常に縦表示
+            force_vertical = False
+            
+            # USER_SELECT, GROUP_SELECTは特別処理
+            if is_vertical_display:
+                # ユーザー選択やグループ選択フィールドの場合、JSON形式でなくても処理
                 try:
-                    # 複数のJSONオブジェクトが連結されている可能性があるので分割して処理
-                    json_parts = value.replace('}, {', '}|{').split('|')
-                    
-                    for part in json_parts:
-                        # 文字列をPythonの辞書に変換
-                        part = part.replace("'", '"')  # シングルクォートをダブルクォートに変換
-                        obj = json.loads(part)
-                        if 'code' in obj and 'name' in obj:
-                            json_objects.append(f"{obj['name']}({obj['code']})")
-                    
-                    if json_objects:
-                        is_json = True
+                    # JSON形式かチェック
+                    if isinstance(value, str) and ((value.startswith('{') and 'code' in value and 'name' in value) or
+                                                  (field_type == 'USER_SELECT' and '@' in value)):
+                        # 1. 標準的なJSON形式の場合
+                        if value.startswith('{'):
+                            json_parts = value.replace('}, {', '}|{').split('|')
+                            
+                            for part in json_parts:
+                                part = part.replace("'", '"')
+                                obj = json.loads(part)
+                                if 'code' in obj and 'name' in obj:
+                                    json_objects.append(f"{obj['name']}({obj['code']})")
+                                    # GROUP_SELECTの場合、グループコードを保存
+                                    if field_type == 'GROUP_SELECT':
+                                        group_codes.append(obj['code'])
+                        
+                        # 2. USER_SELECTで特殊な形式の場合（例：user@example.com）
+                        elif field_type == 'USER_SELECT' and '@' in value:
+                            # 単純なメールアドレスの場合はそのまま表示
+                            json_objects.append(value)
+                        
+                        if json_objects:
+                            is_json = True
+                            force_vertical = True
                 except:
-                    # JSON解析に失敗した場合は通常の値として扱う
+                    # 処理失敗の場合は通常値として扱う
+                    pass
+            else:
+                # 通常のJSON形式チェック
+                try:
+                    if isinstance(value, str) and value.startswith('{') and 'code' in value and 'name' in value:
+                        json_parts = value.replace('}, {', '}|{').split('|')
+                        
+                        for part in json_parts:
+                            part = part.replace("'", '"')
+                            obj = json.loads(part)
+                            if 'code' in obj and 'name' in obj:
+                                json_objects.append(f"{obj['name']}({obj['code']})")
+                        
+                        if json_objects:
+                            is_json = True
+                except:
                     pass
             
-            # USER_SELECT、GROUP_SELECTなどは縦表示
-            if is_vertical_display and is_json:
-                # JSON風データの処理 - 縦方向に1行に1つずつ表示
+            # GROUP_SELECTの特別処理
+            if field_type == 'GROUP_SELECT' and is_json and group_yaml_data:
+                # グループごとに行を作成
+                for idx, (group_obj, group_code) in enumerate(zip(json_objects, group_codes)):
+                    # A列: グループ情報
+                    cell_a = ws.cell(row=current_row, column=1)
+                    cell_a.value = group_obj
+                    cell_a.border = thin_border
+                    
+                    # B列: グループメンバー
+                    group_info = group_yaml_data.get(group_code, {})
+                    members = group_info.get('users', [])
+                    
+                    if members:
+                        # メンバーをソート
+                        members = sorted(members, key=lambda x: x.get('username', ''))
+                        members_str = '\n'.join([f"{m.get('username', '')}（{m.get('email', '')}）" for m in members])
+                        
+                        cell_b = ws.cell(row=current_row, column=2)
+                        cell_b.value = members_str
+                        cell_b.border = thin_border
+                        cell_b.alignment = Alignment(wrap_text=True)
+                    
+                    current_row += 1
+            # 縦表示が強制されている場合
+            elif force_vertical:
+                # 強制縦表示 - 1行に1つずつ表示
+                if not json_objects:
+                    # JSON解析に失敗した場合、元の値を使用
+                    cell = ws.cell(row=current_row, column=1)
+                    cell.value = value
+                    cell.border = thin_border
+                    current_row += 1
+                else:
+                    # JSON解析に成功した場合
+                    for obj_value in json_objects:
+                        cell = ws.cell(row=current_row, column=1)
+                        cell.value = obj_value
+                        cell.border = thin_border
+                        current_row += 1
+            # 通常のJSON表示（USER_SELECTなど縦表示）
+            elif is_vertical_display and is_json:
+                # 縦方向に1行に1つずつ表示
                 for obj_value in json_objects:
                     cell = ws.cell(row=current_row, column=1)
                     cell.value = obj_value
                     cell.border = thin_border
                     current_row += 1
-            # 通常のデータ処理
+            # 通常のデータ処理（横表示）
             elif not is_json:
                 col = col_count % 5 + 1
                 cell = ws.cell(row=current_row, column=col)
@@ -263,8 +348,8 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                 col_count += 1
                 if col_count % 5 == 0:
                     current_row += 1
+            # その他のJSON風データ（横表示）
             else:
-                # その他のJSON風データは、1行で表示
                 col = col_count % 5 + 1
                 cell = ws.cell(row=current_row, column=col)
                 cell.value = ", ".join(json_objects)
@@ -275,7 +360,7 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                     current_row += 1
         
         # 次のフィールドのために行を進める
-        if (not is_json or not is_vertical_display) and col_count % 5 != 0:
+        if not force_vertical and not (is_vertical_display and is_json) and col_count % 5 != 0:
             current_row += 1
         row_idx = current_row + 1
     
@@ -514,7 +599,7 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     
     # フィールド値の参考一覧を追加
     if field_codes and app_dir:
-        row_idx = add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border, form_fields)
+        row_idx = add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border, form_fields, group_yaml_data)
 
 def create_record_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields=None, app_dir=None):
     """レコード通知設定のシートを作成"""
@@ -622,7 +707,7 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
     # フィールド値の参考一覧を追加
     if field_codes and app_dir:
         row_idx = row
-        row_idx = add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border, form_fields)
+        row_idx = add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border, form_fields, group_yaml_data)
     
     return ws
 
