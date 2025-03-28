@@ -181,7 +181,7 @@ def load_field_values_from_tsv(app_dir, field_code):
         logging.warning(f"TSVファイルの読み込みに失敗しました: {e}")
         return []
 
-def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border):
+def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border, form_fields=None):
     """フィールド値の参考一覧を追加"""
     
     if not field_codes or not app_dir:
@@ -202,10 +202,20 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
         if not values:
             continue
         
+        # フィールドタイプを取得
+        field_type = None
+        if form_fields and field_code in form_fields.get('properties', {}):
+            field_info = form_fields['properties'][field_code]
+            field_type = field_info.get('type', '')
+        
         # フィールドの見出し
-        ws.cell(row=row_idx, column=1).value = f"フィールド: {field_code}"
+        type_info = f" ({field_type})" if field_type else ""
+        ws.cell(row=row_idx, column=1).value = f"フィールド: {field_code}{type_info}"
         ws.cell(row=row_idx, column=1).font = Font(bold=True)
         row_idx += 1
+        
+        # 縦に表示するタイプのフィールドかどうか
+        is_vertical_display = field_type in ['USER_SELECT', 'GROUP_SELECT', 'ORGANIZATION_SELECT']
         
         # データを表示するための準備
         col_count = 0
@@ -235,8 +245,16 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                     # JSON解析に失敗した場合は通常の値として扱う
                     pass
             
+            # USER_SELECT、GROUP_SELECTなどは縦表示
+            if is_vertical_display and is_json:
+                # JSON風データの処理 - 縦方向に1行に1つずつ表示
+                for obj_value in json_objects:
+                    cell = ws.cell(row=current_row, column=1)
+                    cell.value = obj_value
+                    cell.border = thin_border
+                    current_row += 1
             # 通常のデータ処理
-            if not is_json:
+            elif not is_json:
                 col = col_count % 5 + 1
                 cell = ws.cell(row=current_row, column=col)
                 cell.value = value
@@ -246,15 +264,18 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                 if col_count % 5 == 0:
                     current_row += 1
             else:
-                # JSON風データの処理 - 縦方向に1行に1グループずつ表示
-                for obj_value in json_objects:
-                    cell = ws.cell(row=current_row, column=1)
-                    cell.value = obj_value
-                    cell.border = thin_border
+                # その他のJSON風データは、1行で表示
+                col = col_count % 5 + 1
+                cell = ws.cell(row=current_row, column=col)
+                cell.value = ", ".join(json_objects)
+                cell.border = thin_border
+                
+                col_count += 1
+                if col_count % 5 == 0:
                     current_row += 1
         
         # 次のフィールドのために行を進める
-        if not is_json and col_count % 5 != 0:
+        if (not is_json or not is_vertical_display) and col_count % 5 != 0:
             current_row += 1
         row_idx = current_row + 1
     
@@ -493,7 +514,7 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     
     # フィールド値の参考一覧を追加
     if field_codes and app_dir:
-        row_idx = add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border)
+        row_idx = add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border, form_fields)
 
 def create_record_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields=None, app_dir=None):
     """レコード通知設定のシートを作成"""
@@ -601,7 +622,7 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
     # フィールド値の参考一覧を追加
     if field_codes and app_dir:
         row_idx = row
-        row_idx = add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border)
+        row_idx = add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border, form_fields)
     
     return ws
 
