@@ -459,6 +459,11 @@ class ExcelExporter:
             f for f in glob.glob('./audit/*.zip')
         ]
         
+        # audit.csvが存在する場合は追加
+        if os.path.exists('audit.csv'):
+            audit_files.append('audit.csv')
+            self.logger.info("カレントディレクトリのaudit.csvを追加しました。")
+        
         if audit_files:
             # データフレームのリストを作成
             audit_df_list = []
@@ -470,9 +475,11 @@ class ExcelExporter:
                                 with zip_ref.open(csv_file) as f:
                                     df = pd.read_csv(f)
                                     audit_df_list.append(df)
+                                    self.logger.debug(f"zipファイル内のCSVを読み込みました: {csv_file}")
                 else:
                     df = pd.read_csv(file)
                     audit_df_list.append(df)
+                    self.logger.debug(f"CSVファイルを読み込みました: {file}")
 
             if audit_df_list:
                 # 全データを結合して処理
