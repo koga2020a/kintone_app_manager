@@ -142,7 +142,7 @@ def find_group_user_list_yaml():
     logging.warning("group_user_list.yaml が見つかりませんでした")
     return None
 
-def create_notification_excel(app_id, general_data, record_data, reminder_data, output_file=None):
+def create_notification_excel(app_id, general_data, record_data, reminder_data, form_fields=None, output_file=None):
     """通知設定をExcelに出力する"""
     
     if output_file is None:
@@ -182,7 +182,7 @@ def create_notification_excel(app_id, general_data, record_data, reminder_data, 
     
     # 2. レコード通知設定のシート作成
     if record_data:
-        create_record_notifications_sheet(wb, record_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
+        create_record_notifications_sheet(wb, record_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields)
     
     # 3. リマインダー通知設定のシート作成
     if reminder_data:
@@ -357,12 +357,12 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     if group_codes:
         row_idx = add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
 
-def create_record_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes):
+def create_record_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields=None):
     """レコード通知設定のシートを作成"""
     ws = wb.create_sheet(title="レコード通知設定")
     
     # ヘッダー設定
-    headers = ["No.", "通知タイトル", "通知条件", "通知先種別", "通知先", "下位組織継承"]
+    headers = ["No.", "通知タイトル", "通知条件", "通知先種別", "通知先", "フィールドタイプ", "下位組織継承"]
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = header_font
@@ -377,6 +377,7 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
     ws.column_dimensions['D'].width = 15
     ws.column_dimensions['E'].width = 30
     ws.column_dimensions['F'].width = 15
+    ws.column_dimensions['G'].width = 15
     
     # データの書き込み
     row = 2
@@ -397,6 +398,7 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
             
             # 通知先タイプを日本語に変換
             type_jp = ""
+            field_type = ""
             if entity_type == "USER":
                 type_jp = "ユーザー"
             elif entity_type == "GROUP":
@@ -405,6 +407,10 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
                 type_jp = "組織"
             elif entity_type == "FIELD_ENTITY":
                 type_jp = "フィールド"
+                # フォームフィールド情報からタイプを取得
+                if form_fields and entity_code in form_fields.get('properties', {}):
+                    field_info = form_fields['properties'][entity_code]
+                    field_type = field_info.get('type', '')
             
             # データを書き込み
             cells = [
@@ -413,7 +419,8 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
                 (row, 3, condition),
                 (row, 4, type_jp),
                 (row, 5, entity_code),
-                (row, 6, "継承する" if include_subs else "継承しない")
+                (row, 6, field_type),
+                (row, 7, "継承する" if include_subs else "継承しない")
             ]
             
             for r, c, value in cells:
@@ -432,8 +439,8 @@ def create_reminder_notifications_sheet(wb, data, header_font, header_fill, head
     # A列の幅を22に設定
     ws.column_dimensions["A"].width = 22
     
-    # ヘッダー行 - フィールドタイプ列を追加
-    headers = ["No.", "リマインダー名", "通知先タイプ", "フィールドタイプ", "通知先", "日時フィールド", "条件", "通知タイミング"]
+    # ヘッダー行 - フィールド名列を追加
+    headers = ["No.", "リマインダー名", "通知先タイプ", "フィールド名", "通知先", "日時フィールド", "条件", "通知タイミング"]
     for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx)
         cell.value = header
@@ -685,11 +692,13 @@ def main():
         general_file = app_dir / f"{args.app_id}_general_notifications.yaml"
         record_file = app_dir / f"{args.app_id}_record_notifications.yaml"
         reminder_file = app_dir / f"{args.app_id}_reminder_notifications.yaml"
+        form_fields_file = app_dir / f"{args.app_id}_form_fields.yaml"
         
         # YAMLファイルの読み込み
         general_data = load_yaml_file(general_file) if general_file.exists() else None
         record_data = load_yaml_file(record_file) if record_file.exists() else None
         reminder_data = load_yaml_file(reminder_file) if reminder_file.exists() else None
+        form_fields = load_yaml_file(form_fields_file) if form_fields_file.exists() else None
         
         if not any([general_data, record_data, reminder_data]):
             logger.error(f"アプリID {args.app_id} の通知設定ファイルが見つかりません")
@@ -705,7 +714,7 @@ def main():
             output_file = Path(output_file)
         
         # Excelファイルの作成
-        excel_file = create_notification_excel(args.app_id, general_data, record_data, reminder_data, output_file)
+        excel_file = create_notification_excel(args.app_id, general_data, record_data, reminder_data, form_fields, output_file)
         
         logger.info(f"通知設定を {excel_file} に出力しました")
         print(f"通知設定を {excel_file} に出力しました")
