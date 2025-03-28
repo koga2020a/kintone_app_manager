@@ -178,7 +178,7 @@ def create_notification_excel(app_id, general_data, record_data, reminder_data, 
     
     # 1. 一般通知設定のシート作成
     if general_data:
-        create_general_notifications_sheet(wb, general_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
+        create_general_notifications_sheet(wb, general_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields)
     
     # 2. レコード通知設定のシート作成
     if record_data:
@@ -236,7 +236,7 @@ def create_group_members_sheet(wb, group_codes, group_yaml_data, header_font, he
     ws.column_dimensions['B'].width = 30
     ws.column_dimensions['C'].width = 50
 
-def create_general_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes):
+def create_general_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields=None):
     """一般通知設定のシートを作成"""
     ws = wb.create_sheet(title="一般通知設定")
     
@@ -244,7 +244,7 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     ws.column_dimensions["A"].width = 22
     
     # ヘッダー行 - フィールドタイプ列を追加
-    headers = ["No.", "通知先タイプ", "フィールドタイプ", "通知先", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
+    headers = ["No.", "通知先種別", "フィールドタイプ", "通知先", "フィールドタイプ", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
     for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx)
         cell.value = header
@@ -274,6 +274,8 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
         # 通知先タイプを日本語に変換
         type_jp = ""
         field_type = ""
+        form_field_type = ""  # フォームフィールドから取得するタイプ用の変数
+        
         if entity_type == "USER":
             type_jp = "ユーザー"
         elif entity_type == "GROUP":
@@ -296,6 +298,11 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
                     field_type = "組織選択"
                 else:
                     field_type = entity.get("type", "")
+            
+            # フォームフィールド情報からタイプを取得
+            if form_fields and entity_code in form_fields.get('properties', {}):
+                field_info = form_fields['properties'][entity_code]
+                form_field_type = field_info.get('type', '')
         else:
             type_jp = entity_type
         
@@ -305,6 +312,7 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
             type_jp,  # 通知先タイプ
             field_type,  # フィールドタイプ - 新しい列
             entity_code,  # 通知先
+            form_field_type,  # フォームフィールドから取得したフィールドタイプ - E列
             "●" if notify.get("includeSubs", False) else "",  # サブグループ含む
             "●" if notify.get("recordAdded", False) else "",  # レコード追加
             "●" if notify.get("recordEdited", False) else "",  # レコード編集
@@ -322,7 +330,7 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
             cell.border = thin_border
             if row_fill:
                 cell.fill = row_fill
-            if col_idx >= 5:  # チェックボックス的な列は中央揃え
+            if col_idx >= 6:  # チェックボックス的な列は中央揃え
                 cell.alignment = Alignment(horizontal='center')
     
     # コメント通知設定
@@ -350,6 +358,8 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
             ws.column_dimensions[column_letter].width = 15
         elif col_idx == 4:  # 通知先列
             ws.column_dimensions[column_letter].width = 20
+        elif col_idx == 5:  # フィールドタイプ列（新しく追加）
+            ws.column_dimensions[column_letter].width = 15
         else:  # その他の列
             ws.column_dimensions[column_letter].width = 15
     
@@ -381,12 +391,19 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
     
     # データの書き込み
     row = 2
+    current_notification_id = None
+    first_row_of_notification = None
+    
     for idx, notification in enumerate(data.get('notifications', []), 1):
         title = notification.get('title', '')
         condition = notification.get('filterCond', '')
         
+        # 現在の通知IDを設定
+        current_notification_id = idx
+        first_row_of_notification = row
+        
         # 通知先ごとに行を作成
-        for target in notification.get('targets', []):
+        for target_idx, target in enumerate(notification.get('targets', []), 0):
             entity = target.get('entity', {})
             entity_type = entity.get('type', '')
             entity_code = entity.get('code', '')
@@ -414,9 +431,9 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
             
             # データを書き込み
             cells = [
-                (row, 1, idx),
-                (row, 2, title),
-                (row, 3, condition),
+                (row, 1, idx if target_idx == 0 else None),
+                (row, 2, title if target_idx == 0 else None),
+                (row, 3, condition if target_idx == 0 else None),
                 (row, 4, type_jp),
                 (row, 5, entity_code),
                 (row, 6, field_type),
@@ -429,6 +446,16 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
                 cell.alignment = Alignment(vertical='center', wrap_text=True)
             
             row += 1
+        
+        # 同じ通知IDの行が複数ある場合、A列、B列、C列を結合
+        if row > first_row_of_notification + 1:
+            for col in range(1, 4):  # A, B, C列
+                ws.merge_cells(
+                    start_row=first_row_of_notification,
+                    start_column=col,
+                    end_row=row - 1,
+                    end_column=col
+                )
     
     return ws
 
