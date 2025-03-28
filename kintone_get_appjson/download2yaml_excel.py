@@ -137,7 +137,7 @@ def process_raw_layout(input_file, output_file):
             label_match = re.search(r'label: "(.*?)"', row[10])
             if label_match and row[4] not in ['GROUP']:
                 row[6] = label_match.group(1)
-        if row[4] in ['HR', 'SPACER']:
+        if row[4] in ['HR']:
             continue
         if row[4] in ['GROUP'] and rows[i + 1][4] in ['LABEL'] and rows[i + 1][6] != '' and row[1] != '' and rows[i+1][1] != '':
             row[1] = ''
@@ -346,6 +346,8 @@ class ExcelFormatter:
             in_cell.value = in_value
             in_cell.font = self.font
 
+        light_pink_fill = PatternFill(start_color='FFE6E6', end_color='FFE6E6', fill_type='solid')
+
         with open(tsv_filename, 'r', encoding='utf-8') as infile:
             reader = csv.reader(infile, delimiter='\t')
             rows = list(reader)
@@ -364,7 +366,15 @@ class ExcelFormatter:
             new_row[0] = row[0]
             indent_level = int(row[0])
             start_index = 2 + indent_level
-            field_name = ((row[5] + ' ') if row[4] == 'GROUP' else '') + row[6]
+            
+            # フィールドタイプに応じて項目名を設定
+            if row[4] == 'SPACER':
+                field_name = f"スペース ({row[5]})"  # スペース型のみフィールドコードを含める
+            elif row[4] == 'GROUP':
+                field_name = row[5] + ' ' + row[6]  # グループは従来通り
+            else:
+                field_name = row[6]  # その他のフィールドは従来通り
+            
             new_row[start_index] = field_name
             new_row[6] = '〇' if (row[8] if len(row) > 8 else '') == '必須' else ''
             set_val_font(self.ws[f'B{i+3}'], new_row[0])
@@ -374,9 +384,12 @@ class ExcelFormatter:
             set_val_font(self.ws[f'F{i+3}'], new_row[4])
             set_val_font(self.ws[f'G{i+3}'], new_row[5])
             set_val_font(self.ws[f'S{i+3}'], new_row[6])
-            if len(row) > 5 and row[4] not in ['GROUP', 'LABEL', 'HR', 'SPACER']:
+            if len(row) > 5 and row[4] not in ['GROUP', 'LABEL', 'HR']:
                 field_code = row[5]
-                set_val_font(self.ws[f'BA{i+3}'], field_code)
+                if row[4] == 'SPACER':
+                    set_val_font(self.ws[f'BA{i+3}'], field_code)
+                elif row[4] not in ['GROUP', 'LABEL', 'HR']:
+                    set_val_font(self.ws[f'BA{i+3}'], field_code)
             if len(row) > 4:
                 field_type = row[4]
                 field_type_ja = {
@@ -422,6 +435,13 @@ class ExcelFormatter:
                             set_val_font(self.ws[f'BC{i+3}'], '選択肢: ' + ', '.join(options))
                     except Exception as e:
                         print(f"選択肢の解析エラー: {e}")
+
+            # SPACERフィールドの行 A列からC列を薄いピンク色に設定
+            if row[4] == 'SPACER':
+                for col_letter in [get_column_letter(col) for col in range(1, 4)]:
+                    cell = self.ws[f'{col_letter}{i+3}']
+                    cell.fill = light_pink_fill
+
             field_start_col_letter = get_column_letter(start_index + 2)
             merge_range = f"{field_start_col_letter}{i+3}:R{i+3}"
             self.ws.merge_cells(merge_range)
