@@ -594,6 +594,9 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     # グループの通知先を収集
     group_codes = []
     
+    # ユーザーの通知先を収集
+    user_codes = []
+    
     # フィールドコードの収集
     field_codes = []
     
@@ -605,6 +608,10 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
         # グループコードを収集
         if entity_type == "GROUP":
             group_codes.append(entity_code)
+        
+        # ユーザーコードを収集
+        if entity_type == "USER":
+            user_codes.append(entity_code)
         
         # 通知先タイプを日本語に変換
         type_jp = ""
@@ -698,6 +705,11 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     # グループメンバー情報を追加
     if group_codes:
         row_idx = add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
+    
+    # ユーザー情報を追加
+    if user_codes:
+        user_yaml_data = load_user_list_yaml(Path(SCRIPT_DIR).parent)
+        row_idx = add_user_information_table(ws, row_idx, user_codes, header_font, header_fill, header_alignment, thin_border, user_yaml_data)
     
     # フィールド値の参考一覧を追加
     if field_codes and app_dir:
@@ -975,7 +987,7 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
     
     # グループ情報の見出し
     row_idx += 2
-    ws.cell(row=row_idx, column=1).value = "通知先種別：グループ メンバー情報"
+    ws.cell(row=row_idx, column=1).value = "通知先種別：グループ"
     ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
     ws.cell(row=row_idx, column=1).fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
     row_idx += 1
@@ -1132,6 +1144,79 @@ def sort_group_members(members):
         return (get_group(user), user.get('username', ''))
     
     return sorted(members, key=sort_key)
+
+def add_user_information_table(ws, row_idx, user_codes, header_font, header_fill, header_alignment, thin_border, user_yaml_data):
+    """ユーザー情報の表を追加"""
+
+    if not user_codes or not user_yaml_data:
+        return row_idx
+    
+    # ユーザー情報の見出し
+    row_idx += 2
+    ws.cell(row=row_idx, column=1).value = "通知先種別：ユーザー 情報"
+    ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
+    ws.cell(row=row_idx, column=1).fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+    row_idx += 1
+    
+    # 重複するユーザーコードを除去
+    unique_user_codes = list(set(user_codes))
+    
+    # ヘッダー行
+    headers = ["アカウント名", "メールアドレス", "停止中"]
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws.cell(row=row_idx, column=col_idx)
+        cell.value = header
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
+    row_idx += 1
+    
+    for user_code in unique_user_codes:
+        # ユーザーが存在しない場合はコードのみ表示
+        if user_code not in user_yaml_data:
+            # A列: アカウント名（コードのみ）
+            cell_a = ws.cell(row=row_idx, column=1)
+            cell_a.value = user_code
+            cell_a.border = thin_border
+            
+            # B列: メールアドレス（空欄）
+            cell_b = ws.cell(row=row_idx, column=2)
+            cell_b.border = thin_border
+            
+            # C列: 停止中（空欄）
+            cell_c = ws.cell(row=row_idx, column=3)
+            cell_c.border = thin_border
+            
+            row_idx += 1
+            continue
+        
+        user_info = user_yaml_data[user_code]
+        
+        # A列: アカウント名
+        cell_a = ws.cell(row=row_idx, column=1)
+        cell_a.value = user_info.get('username', user_code)
+        cell_a.border = thin_border
+        
+        # B列: メールアドレス
+        cell_b = ws.cell(row=row_idx, column=2)
+        cell_b.value = user_info.get('email', '')
+        cell_b.border = thin_border
+        
+        # C列: 停止中かどうか
+        cell_c = ws.cell(row=row_idx, column=3)
+        cell_c.value = "停止中" if user_info.get('isDisabled', False) else ""
+        cell_c.border = thin_border
+
+        # C列が「停止中」の場合、行全体の背景色を淡いグレーに設定
+        if cell_c.value == "停止中":
+            gray_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+            for col in range(1, 4):  # A, B, C列
+                ws.cell(row=row_idx, column=col).fill = gray_fill
+        
+        row_idx += 1
+    
+    return row_idx
 
 def main():
     """メイン関数"""
