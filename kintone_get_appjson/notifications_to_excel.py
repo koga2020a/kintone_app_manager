@@ -333,8 +333,8 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                         
                         current_row += 1
                     else:
-                        # メンバーをソート
-                        members = sorted(members, key=lambda x: x.get('username', ''))
+                        # メンバーをソート（アクティブユーザーを上部に、同一ドメインでグループ化）
+                        members = sort_group_members(members)
                         
                         # グループの最初の行を記録
                         first_row_of_group = current_row
@@ -386,6 +386,8 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
             elif field_type == 'USER_SELECT' and is_json:
                 # ユーザー情報の取得（group_yaml_dataからユーザー情報を探す）
                 all_users = {}
+                user_objects = []
+                
                 if group_yaml_data:
                     for group_data in group_yaml_data.values():
                         for user in group_data.get('users', []):
@@ -400,21 +402,33 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                         if user_code not in all_users:
                             all_users[user_code] = user_info
 
+                # 選択されたユーザーのリストを作成
+                for user_code in user_codes:
+                    if user_code in all_users:
+                        user_objects.append(all_users[user_code])
+                    else:
+                        # ユーザー情報が見つからない場合は最低限の情報で作成
+                        user_objects.append({
+                            'username': user_code,
+                            'email': '',
+                            'isDisabled': False
+                        })
+                
+                # ユーザーをソート
+                user_objects = sort_group_members(user_objects)
+                
                 # グループの最初の行を記録
                 first_row_of_group = current_row
 
                 # ユーザーごとに行を作成
-                for i, (user_obj, user_code) in enumerate(zip(json_objects, user_codes)):
+                for i, user_info in enumerate(user_objects):
                     # A列: 空白
                     cell_a = ws.cell(row=current_row, column=1)
                     cell_a.border = thin_border
                     
-                    # ユーザー情報をユーザーデータから取得
-                    user_info = all_users.get(user_code, {})
-                    
                     # B列: アカウント名
                     cell_b = ws.cell(row=current_row, column=2)
-                    cell_b.value = user_info.get('username', user_code)
+                    cell_b.value = user_info.get('username', '')
                     cell_b.border = thin_border
                     
                     # C列: メールアドレス
@@ -973,8 +987,8 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
         group_name = group_info.get('name', '不明なグループ')
         members = group_info.get('users', [])
         
-        # メンバーをユーザー名でソート
-        members = sorted(members, key=lambda x: x.get('username', ''))
+        # メンバーをソート（アクティブユーザーを上部に、同一ドメインでグループ化）
+        members = sort_group_members(members)
 
         # ヘッダー行
         headers = ["グループ名", "アカウント名", "メールアドレス", "停止中"]
@@ -1044,6 +1058,40 @@ def merge_cells_in_column_a(ws, start_row, end_row):
         # 結合したセルの配置を中央揃えに
         merged_cell = ws.cell(row=start_row, column=1)
         merged_cell.alignment = Alignment(vertical='center')
+
+def sort_group_members(members):
+    """
+    グループメンバーをソートする関数
+    
+    1. アクティブなユーザーを上部に、停止中のユーザーを下部に配置
+    2. それぞれのグループ内でドメイン順にソート
+    3. 同じドメイン内ではユーザー名でソート
+    
+    Args:
+        members: ユーザー情報のリスト
+        
+    Returns:
+        list: ソートされたユーザーリスト
+    """
+    def get_domain(email):
+        """メールアドレスからドメイン部分を取得"""
+        if not email or '@' not in email:
+            return ""
+        return email.split('@')[1].lower()
+    
+    def get_sort_key(user):
+        """ソートキーを生成"""
+        is_disabled = user.get('isDisabled', False)
+        email = user.get('email', '')
+        domain = get_domain(email)
+        username = user.get('username', '')
+        
+        # 最初のキーは停止状態（True/Falseを0/1に変換して停止中を後ろに）
+        # 次にドメイン、最後にユーザー名でソート
+        return (1 if is_disabled else 0, domain, username)
+    
+    # ソートして返す
+    return sorted(members, key=get_sort_key)
 
 def main():
     """メイン関数"""
