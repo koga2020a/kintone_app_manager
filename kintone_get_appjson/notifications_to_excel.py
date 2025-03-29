@@ -17,6 +17,7 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+from dotenv import load_dotenv
 
 # 定数定義
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -1062,36 +1063,70 @@ def merge_cells_in_column_a(ws, start_row, end_row):
 def sort_group_members(members):
     """
     グループメンバーをソートする関数
-    
-    1. アクティブなユーザーを上部に、停止中のユーザーを下部に配置
-    2. それぞれのグループ内でドメイン順にソート
-    3. 同じドメイン内ではユーザー名でソート
-    
+
+    1. 優先ドメイン（環境変数 USER_DOMAIN で指定）を含むアクティブなユーザーを上部に配置
+    2. その他のアクティブなユーザーを中部に配置
+    3. 停止中（isDisabled=True）のユーザーを下部に配置
+    4. 各グループ内はユーザー名でソート
+
     Args:
         members: ユーザー情報のリスト
-        
+
     Returns:
         list: ソートされたユーザーリスト
     """
-    def get_domain(email):
-        """メールアドレスからドメイン部分を取得"""
-        if not email or '@' not in email:
-            return ""
-        return email.split('@')[1].lower()
+    # .env ファイルからドメイン情報を読み込む
+    try:
+        # SCRIPT_DIRを使用して絶対パスを取得
+        env_path = Path(SCRIPT_DIR).parent / '.kintone.env'
+        
+        # ファイルの存在を確認してからロード
+        if env_path.exists():
+            logging.info(f".kintone.env ファイルを読み込みます: {env_path}")
+            load_dotenv(env_path)
+            
+            # 環境変数から優先ドメインを取得
+            priority_domain = os.getenv('USER_DOMAIN', '').lower()
+            logging.info(f"取得した優先ドメイン: {priority_domain}")
+        else:
+            logging.warning(f".kintone.env ファイルが見つかりません: {env_path}")
+            priority_domain = ''
+            
+    except Exception as e:
+        logging.error(f"環境変数の読み込みでエラーが発生しました: {e}")
+        priority_domain = ''
     
-    def get_sort_key(user):
-        """ソートキーを生成"""
+    # 優先ドメインが空の場合、デフォルト値を設定
+    if not priority_domain:
+        priority_domain = 'kirin.co.jp'  # 既定値を設定
+        logging.info(f"優先ドメインが設定されていないため、デフォルト値'{priority_domain}'を使用します")
+    else:
+        logging.info(f"優先ドメイン'{priority_domain}'を使用してユーザーをソートします")
+
+    def get_group(user):
+        """ユーザーをグループ分けする
+           0: アクティブかつ優先ドメイン一致
+           1: アクティブで優先ドメイン以外（ドメイン未設定も含む）
+           2: 停止中
+        """
         is_disabled = user.get('isDisabled', False)
         email = user.get('email', '')
-        domain = get_domain(email)
-        username = user.get('username', '')
-        
-        # 最初のキーは停止状態（True/Falseを0/1に変換して停止中を後ろに）
-        # 次にドメイン、最後にユーザー名でソート
-        return (1 if is_disabled else 0, domain, username)
+        domain = ''
+        if email and '@' in email:
+            domain = email.split('@')[1].lower()
+
+        if is_disabled:
+            return 2
+        elif domain == priority_domain:
+            return 0
+        else:
+            return 1
+
+    def sort_key(user):
+        # 各グループ内はユーザー名でソート
+        return (get_group(user), user.get('username', ''))
     
-    # ソートして返す
-    return sorted(members, key=get_sort_key)
+    return sorted(members, key=sort_key)
 
 def main():
     """メイン関数"""
