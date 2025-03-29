@@ -590,6 +590,11 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     user_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # 薄い赤
     group_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # 薄い緑
     field_fill = PatternFill(start_color="CCCCFF", end_color="CCCCFF", fill_type="solid")  # 薄い青
+    field_modifier_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # 薄い赤
+    field_creator_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # 薄い緑
+    field_status_assignee_fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")  # 薄い黄色
+    field_user_select_fill = PatternFill(start_color="FFCCFF", end_color="FFCCFF", fill_type="solid")  # 薄いピンク
+    field_group_select_fill = PatternFill(start_color="FFCC99", end_color="FFCC99", fill_type="solid")  # 薄いオレンジ
     
     # ヘッダー行 - フィールドタイプ列を追加
     headers = ["No.", "通知先種別", "フィールドタイプ", "通知先", "フィールドタイプ", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
@@ -690,16 +695,29 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
             cell.value = value
             cell.border = thin_border
             
-            # 通知先種別に応じた背景色を設定（B列）
-            if col_idx == 2 and value:
+            # 通知先種別に応じた背景色を設定
+            if col_idx == 2 and value:  # B列
                 if value == "ユーザー":
                     cell.fill = user_fill
                 elif value == "グループ":
                     cell.fill = group_fill
                 elif value == "フィールド":
-                    cell.fill = field_fill
+                    cell.fill = field_fill  # B列のフィールドはfield_fillを使用
                 elif row_fill:
                     cell.fill = row_fill
+            elif col_idx == 5:  # E列
+                # E列のフィールドタイプを使用して背景色を設定
+                logging.info(f"++++++++++  form_field_type: {form_field_type}")
+                if form_field_type == "CREATOR":
+                    cell.fill = field_creator_fill
+                elif form_field_type == "MODIFIER":
+                    cell.fill = field_modifier_fill
+                elif form_field_type == "STATUS_ASSIGNEE":
+                    cell.fill = field_status_assignee_fill
+                elif form_field_type == "USER_SELECT":
+                    cell.fill = field_user_select_fill
+                elif form_field_type == "GROUP_SELECT":
+                    cell.fill = field_group_select_fill
             elif row_fill and col_idx != 2:  # B列以外
                 cell.fill = row_fill
                 
