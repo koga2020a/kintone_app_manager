@@ -199,6 +199,8 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
     # 重複するフィールドコードを除去
     unique_field_codes = list(set(field_codes))
     
+    field_header_fill = PatternFill(start_color="CCCCFF", end_color="CCCCFF", fill_type="solid")  # フィールド用の背景色（薄い青）
+    
     for field_code in unique_field_codes:
         values = load_field_values_from_tsv(app_dir, field_code)
         
@@ -216,13 +218,17 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
         cell = ws.cell(row=row_idx, column=1)
         cell.value = f"通知先種別：フィールド  フィールドタイプ：{'グループ選択（GROUP_SELECT）' if field_type == 'GROUP_SELECT' else 'ユーザー選択（USER_SELECT）'}"
         cell.font = Font(bold=True, size=12)
-        cell.fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+        cell.fill = field_header_fill
         row_idx += 1
         
         # フィールドの見出し
         type_info = f" ({field_type})" if field_type else ""
-        ws.cell(row=row_idx, column=1).value = f"フィールド名：{field_code}     ※値は過去データより収集)"
-        ws.cell(row=row_idx, column=1).font = Font(bold=True)
+        # A列とB列を結合
+        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
+        cell = ws.cell(row=row_idx, column=1)
+        cell.value = f"フィールド名：{field_code}     ※値は過去データより収集)"
+        cell.font = Font(bold=True, size=13)
+        cell.fill = field_header_fill
         row_idx += 1
         
         # USER_SELECTまたはGROUP_SELECTの場合はヘッダーを追加
@@ -566,20 +572,15 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     """一般通知設定のシートを作成"""
     ws = wb.create_sheet(title="一般通知設定")
     
-    # 通知先種別ごとの背景色を定義
-    user_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # 薄い赤
-    group_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # 薄い緑
-    field_fill = PatternFill(start_color="9999FF", end_color="9999FF", fill_type="solid")  # 濃い青（デフォルト）
-    field_modifier_fill = PatternFill(start_color="FF9999", end_color="FF9999", fill_type="solid")  # 濃い赤
-    field_creator_fill = PatternFill(start_color="99FF99", end_color="99FF99", fill_type="solid")  # 濃い緑
-    field_status_assignee_fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")  # 濃い黄色
-    field_user_select_fill = PatternFill(start_color="FF99FF", end_color="FF99FF", fill_type="solid")  # 濃いピンク
-    field_group_select_fill = PatternFill(start_color="FF9966", end_color="FF9966", fill_type="solid")  # 濃いオレンジ
-
     # A, B, C列の幅を330pxに設定（約47文字分）
     ws.column_dimensions["A"].width = 47
     ws.column_dimensions["B"].width = 47
     ws.column_dimensions["C"].width = 47
+    
+    # 通知先種別ごとの背景色を定義
+    user_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # 薄い赤
+    group_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # 薄い緑
+    field_fill = PatternFill(start_color="CCCCFF", end_color="CCCCFF", fill_type="solid")  # 薄い青
     
     # ヘッダー行 - フィールドタイプ列を追加
     headers = ["No.", "通知先種別", "フィールドタイプ", "通知先", "フィールドタイプ", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
@@ -600,6 +601,9 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     # グループの通知先を収集
     group_codes = []
     
+    # ユーザーの通知先を収集
+    user_codes = []
+    
     # フィールドコードの収集
     field_codes = []
     
@@ -611,6 +615,10 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
         # グループコードを収集
         if entity_type == "GROUP":
             group_codes.append(entity_code)
+        
+        # ユーザーコードを収集
+        if entity_type == "USER":
+            user_codes.append(entity_code)
         
         # 通知先タイプを日本語に変換
         type_jp = ""
@@ -673,30 +681,19 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
             cell.value = value
             cell.border = thin_border
             
-            # 通知先種別に応じた背景色を設定
-            if col_idx == 2 and value:  # B列
+            # 通知先種別に応じた背景色を設定（B列）
+            if col_idx == 2 and value:
                 if value == "ユーザー":
                     cell.fill = user_fill
                 elif value == "グループ":
                     cell.fill = group_fill
                 elif value == "フィールド":
-                    cell.fill = field_fill  # B列のフィールドはfield_fillを使用
+                    cell.fill = field_fill
                 elif row_fill:
                     cell.fill = row_fill
-            elif col_idx == 4 or col_idx == 5:  # D列とE列
-                # フィールドタイプを使用して背景色を設定
-                if form_field_type == "CREATOR":
-                    cell.fill = field_creator_fill
-                elif form_field_type == "MODIFIER":
-                    cell.fill = field_modifier_fill
-                elif form_field_type == "STATUS_ASSIGNEE":
-                    cell.fill = field_status_assignee_fill
-                elif form_field_type == "USER_SELECT":
-                    cell.fill = field_user_select_fill
-                elif form_field_type == "GROUP_SELECT":
-                    cell.fill = field_group_select_fill
             elif row_fill and col_idx != 2:  # B列以外
                 cell.fill = row_fill
+                
             if col_idx >= 6:  # チェックボックス的な列は中央揃え
                 cell.alignment = Alignment(horizontal='center')
     
@@ -727,6 +724,11 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     # グループメンバー情報を追加
     if group_codes:
         row_idx = add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
+    
+    # ユーザー情報を追加
+    if user_codes:
+        user_yaml_data = load_user_list_yaml(Path(SCRIPT_DIR).parent)
+        row_idx = add_user_information_table(ws, row_idx, user_codes, header_font, header_fill, header_alignment, thin_border, user_yaml_data)
     
     # フィールド値の参考一覧を追加
     if field_codes and app_dir:
@@ -1009,7 +1011,8 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
     ws.cell(row=row_idx, column=1).value = "通知先種別：グループ"
     ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
     ws.cell(row=row_idx, column=1).fill = group_header_fill
-
+    row_idx += 1
+    
     # 重複するグループコードを除去
     unique_group_codes = list(set(group_codes))
     
@@ -1162,6 +1165,81 @@ def sort_group_members(members):
         return (get_group(user), user.get('username', ''))
     
     return sorted(members, key=sort_key)
+
+def add_user_information_table(ws, row_idx, user_codes, header_font, header_fill, header_alignment, thin_border, user_yaml_data):
+    """ユーザー情報の表を追加"""
+
+    if not user_codes or not user_yaml_data:
+        return row_idx
+    
+    # ユーザー情報の見出し
+    row_idx += 2
+    user_header_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # ユーザー用の背景色（薄い赤）
+    
+    ws.cell(row=row_idx, column=1).value = "通知先種別：ユーザー 情報"
+    ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
+    ws.cell(row=row_idx, column=1).fill = user_header_fill
+    row_idx += 1
+    
+    # 重複するユーザーコードを除去
+    unique_user_codes = list(set(user_codes))
+    
+    # ヘッダー行
+    headers = ["アカウント名", "メールアドレス", "停止中"]
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws.cell(row=row_idx, column=col_idx)
+        cell.value = header
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
+    row_idx += 1
+    
+    for user_code in unique_user_codes:
+        # ユーザーが存在しない場合はコードのみ表示
+        if user_code not in user_yaml_data:
+            # A列: アカウント名（コードのみ）
+            cell_a = ws.cell(row=row_idx, column=1)
+            cell_a.value = user_code
+            cell_a.border = thin_border
+            
+            # B列: メールアドレス（空欄）
+            cell_b = ws.cell(row=row_idx, column=2)
+            cell_b.border = thin_border
+            
+            # C列: 停止中（空欄）
+            cell_c = ws.cell(row=row_idx, column=3)
+            cell_c.border = thin_border
+            
+            row_idx += 1
+            continue
+        
+        user_info = user_yaml_data[user_code]
+        
+        # A列: アカウント名
+        cell_a = ws.cell(row=row_idx, column=1)
+        cell_a.value = user_info.get('username', user_code)
+        cell_a.border = thin_border
+        
+        # B列: メールアドレス
+        cell_b = ws.cell(row=row_idx, column=2)
+        cell_b.value = user_info.get('email', '')
+        cell_b.border = thin_border
+        
+        # C列: 停止中かどうか
+        cell_c = ws.cell(row=row_idx, column=3)
+        cell_c.value = "停止中" if user_info.get('isDisabled', False) else ""
+        cell_c.border = thin_border
+
+        # C列が「停止中」の場合、行全体の背景色を淡いグレーに設定
+        if cell_c.value == "停止中":
+            gray_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+            for col in range(1, 4):  # A, B, C列
+                ws.cell(row=row_idx, column=col).fill = gray_fill
+        
+        row_idx += 1
+    
+    return row_idx
 
 def main():
     """メイン関数"""
