@@ -187,12 +187,6 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
     if not field_codes or not app_dir:
         return row_idx
     
-    # 見出し
-    row_idx += 2
-    ws.cell(row=row_idx, column=1).value = "通知先種別：フィールド グループ一覧"
-    ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
-    row_idx += 1
-    
     # 重複するフィールドコードを除去
     unique_field_codes = list(set(field_codes))
     
@@ -208,15 +202,23 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
             field_info = form_fields['properties'][field_code]
             field_type = field_info.get('type', '')
         
+        # 見出し
+        row_idx += 2
+        cell = ws.cell(row=row_idx, column=1)
+        cell.value = f"通知先種別：フィールド  フィールドタイプ：{'グループ選択（GROUP_SELECT）' if field_type == 'GROUP_SELECT' else 'ユーザー選択（USER_SELECT）'}"
+        cell.font = Font(bold=True, size=12)
+        cell.fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+        row_idx += 1
+        
         # フィールドの見出し
         type_info = f" ({field_type})" if field_type else ""
-        ws.cell(row=row_idx, column=1).value = f"フィールド: {field_code}{type_info}"
+        ws.cell(row=row_idx, column=1).value = f"フィールド名：{field_code}     ※値は過去データより収集)"
         ws.cell(row=row_idx, column=1).font = Font(bold=True)
         row_idx += 1
         
         # USER_SELECTまたはGROUP_SELECTの場合はヘッダーを追加
         if field_type == 'GROUP_SELECT':
-            headers = ["グループ", "アカウント名", "メールアドレス", "停止中"]
+            headers = ["グループ名", "アカウント名", "メールアドレス", "停止中"]
             for col_idx, header in enumerate(headers, 1):
                 cell = ws.cell(row=row_idx, column=col_idx)
                 cell.value = header
@@ -326,12 +328,22 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                         # メンバーをソート
                         members = sorted(members, key=lambda x: x.get('username', ''))
                         
+                        # グループの最初の行を記録
+                        first_row_of_group = current_row
+                        
                         # 各メンバーを行に表示
                         for i, member in enumerate(members):
                             # A列: グループ情報（最初のメンバーの行のみ）
                             cell_a = ws.cell(row=current_row, column=1)
                             if i == 0:
-                                cell_a.value = group_obj
+                                if '(' in group_obj and ')' in group_obj:
+                                    name, code = group_obj.split('(')
+                                    code = code.rstrip(')')
+                                    cell_a.value = f"{name}\n({code})"
+                                    # セル内で改行が表示されるように設定
+                                    cell_a.alignment = Alignment(wrap_text=True)
+                                else:
+                                    cell_a.value = group_obj
                             cell_a.border = thin_border
                             
                             # B列: アカウント名
@@ -350,6 +362,20 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                             cell_d.border = thin_border
                             
                             current_row += 1
+                        
+                        # メンバーが複数いる場合、A列を結合
+                        last_row_of_group = current_row - 1
+                        if last_row_of_group > first_row_of_group:
+                            ws.merge_cells(
+                                start_row=first_row_of_group,
+                                start_column=1,
+                                end_row=last_row_of_group,
+                                end_column=1
+                            )
+                            
+                            # 結合したセルの配置を中央揃えに
+                            merged_cell = ws.cell(row=first_row_of_group, column=1)
+                            merged_cell.alignment = Alignment(vertical='center', wrap_text=True)
             
             # USER_SELECTの特別処理
             elif field_type == 'USER_SELECT' and is_json:
@@ -368,7 +394,10 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                     for user_code, user_info in user_yaml_data.items():
                         if user_code not in all_users:
                             all_users[user_code] = user_info
-                
+
+                # グループの最初の行を記録
+                first_row_of_group = current_row
+
                 # ユーザーごとに行を作成
                 for i, (user_obj, user_code) in enumerate(zip(json_objects, user_codes)):
                     # A列: 空白
@@ -394,7 +423,26 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                     cell_d.border = thin_border
                     
                     current_row += 1
-            
+
+                # メンバーが複数いる場合、A列を結合
+                last_row_of_group = current_row - 1
+                # デバッグ出力
+                ws.cell(row=first_row_of_group, column=5).value = f"first_row_of_group: {first_row_of_group}"
+                ws.cell(row=current_row, column=5).value = f"current_row: {current_row}"
+                ws.cell(row=last_row_of_group, column=5).value = f"last_row_of_group: {last_row_of_group}"
+                if last_row_of_group > first_row_of_group:
+                    ws.merge_cells(
+                        start_row=first_row_of_group,
+                        start_column=1,
+                        end_row=last_row_of_group + 1,
+                        end_column=1
+                    )
+                    
+                    # 結合したセルの配置を中央揃えに
+                    merged_cell = ws.cell(row=first_row_of_group, column=1)
+                    merged_cell.alignment = Alignment(vertical='center', wrap_text=True)
+                    #merged_cell.value = "※設定されたユーザ"
+                                
             # 通常のJSONまたは強制縦表示（既にUSER_SELECTとGROUP_SELECTは処理済み）
             elif force_vertical and field_type != 'USER_SELECT' and field_type != 'GROUP_SELECT':
                 # 強制縦表示 - 1行に1つずつ表示
@@ -933,7 +981,7 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
 
         
         # ヘッダー行
-        headers = ["グループ", "アカウント名", "メールアドレス", "停止中"]
+        headers = ["グループ名", "アカウント名", "メールアドレス", "停止中"]
         for col_idx, header in enumerate(headers, 1):
             cell = ws.cell(row=row_idx, column=col_idx)
             cell.value = header
@@ -944,11 +992,13 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
         row_idx += 1
         
         # メンバー行
+        first_row_of_group = row_idx  # グループの最初の行を記録
+        
         for i, user in enumerate(members):
             # A列: グループ情報（最初のメンバーの行のみ）
             cell_a = ws.cell(row=row_idx, column=1)
             if i == 0:
-                cell_a.value = f"{  group_name} ({group_code})"
+                cell_a.value = f"{group_name} ({group_code})"
             cell_a.border = thin_border
             
             # B列: アカウント名
@@ -967,6 +1017,21 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
             cell_d.border = thin_border
             
             row_idx += 1
+        
+        # メンバーが複数いる場合、A列を結合
+        last_row_of_group = row_idx - 1
+        
+        if last_row_of_group > first_row_of_group:
+            ws.merge_cells(
+                start_row=first_row_of_group,
+                start_column=1,
+                end_row=last_row_of_group,
+                end_column=1
+            )
+            
+            # 結合したセルの配置を中央揃えに
+            merged_cell = ws.cell(row=first_row_of_group, column=1)
+            merged_cell.alignment = Alignment(vertical='center')
         
         # グループ間の空白
         row_idx += 1
