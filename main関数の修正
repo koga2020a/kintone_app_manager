@@ -1,0 +1,23 @@
+import argparse
+import logging
+import sys
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description='kintoneアプリの通知設定をExcelに出力するスクリプト')
+    parser.add_argument('app_id', type=int, help='アプリID')
+    parser.add_argument('--output', type=str, help='出力ファイル名')
+    args = parser.parse_args()
+    
+    try:
+        exporter = NotificationExporter(app_id=args.app_id, output_file=args.output)
+        exporter.run()
+    except Exception as e:
+        logging.getLogger("notifications_to_excel").error(f"エラーが発生しました: {e}")
+        import traceback
+        logging.getLogger("notifications_to_excel").error(traceback.format_exc())
+        print(f"エラー: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main() 

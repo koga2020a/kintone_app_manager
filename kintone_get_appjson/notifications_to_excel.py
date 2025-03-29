@@ -133,13 +133,21 @@ def find_group_user_list_yaml():
         Path.cwd()  # カレントディレクトリ
     ]
     
+    # まず group_user_raw_list.yaml を探す
+    for path in search_paths:
+        yaml_path = path / "group_user_raw_list.yaml"
+        if yaml_path.exists():
+            logging.info(f"group_user_raw_list.yaml が見つかりました: {yaml_path}")
+            return yaml_path
+    
+    # 見つからなければ group_user_list.yaml を探す
     for path in search_paths:
         yaml_path = path / "group_user_list.yaml"
         if yaml_path.exists():
             logging.info(f"group_user_list.yaml が見つかりました: {yaml_path}")
             return yaml_path
     
-    logging.warning("group_user_list.yaml が見つかりませんでした")
+    logging.warning("group_user_raw_list.yaml と group_user_list.yaml のどちらも見つかりませんでした")
     return None
 
 def load_field_values_from_tsv(app_dir, field_code):
@@ -361,21 +369,18 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                             cell_d.value = "停止中" if member.get('isDisabled', False) else ""
                             cell_d.border = thin_border
                             
+                            # D列が「停止中」の場合、B, C, D列の背景色を淡いグレーに設定
+                            if cell_d.value == "停止中":
+                                gray_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+                                for col in range(2, 5):  # B, C, D列
+                                    ws.cell(row=current_row, column=col).fill = gray_fill
+                            
                             current_row += 1
                         
                         # メンバーが複数いる場合、A列を結合
                         last_row_of_group = current_row - 1
                         if last_row_of_group > first_row_of_group:
-                            ws.merge_cells(
-                                start_row=first_row_of_group,
-                                start_column=1,
-                                end_row=last_row_of_group,
-                                end_column=1
-                            )
-                            
-                            # 結合したセルの配置を中央揃えに
-                            merged_cell = ws.cell(row=first_row_of_group, column=1)
-                            merged_cell.alignment = Alignment(vertical='center', wrap_text=True)
+                            merge_cells_in_column_a(ws, first_row_of_group, last_row_of_group)
             
             # USER_SELECTの特別処理
             elif field_type == 'USER_SELECT' and is_json:
@@ -422,26 +427,18 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                     cell_d.value = "停止中" if user_info.get('isDisabled', False) else ""
                     cell_d.border = thin_border
                     
+                    # D列が「停止中」の場合、B, C, D列の背景色を淡いグレーに設定
+                    if cell_d.value == "停止中":
+                        gray_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+                        for col in range(2, 5):  # B, C, D列
+                            ws.cell(row=current_row, column=col).fill = gray_fill
+                    
                     current_row += 1
 
                 # メンバーが複数いる場合、A列を結合
                 last_row_of_group = current_row - 1
-                # デバッグ出力
-                ws.cell(row=first_row_of_group, column=5).value = f"first_row_of_group: {first_row_of_group}"
-                ws.cell(row=current_row, column=5).value = f"current_row: {current_row}"
-                ws.cell(row=last_row_of_group, column=5).value = f"last_row_of_group: {last_row_of_group}"
                 if last_row_of_group > first_row_of_group:
-                    ws.merge_cells(
-                        start_row=first_row_of_group,
-                        start_column=1,
-                        end_row=last_row_of_group + 1,
-                        end_column=1
-                    )
-                    
-                    # 結合したセルの配置を中央揃えに
-                    merged_cell = ws.cell(row=first_row_of_group, column=1)
-                    merged_cell.alignment = Alignment(vertical='center', wrap_text=True)
-                    #merged_cell.value = "※設定されたユーザ"
+                    merge_cells_in_column_a(ws, first_row_of_group, last_row_of_group + 1)
                                 
             # 通常のJSONまたは強制縦表示（既にUSER_SELECTとGROUP_SELECTは処理済み）
             elif force_vertical and field_type != 'USER_SELECT' and field_type != 'GROUP_SELECT':
@@ -979,7 +976,6 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
         # メンバーをユーザー名でソート
         members = sorted(members, key=lambda x: x.get('username', ''))
 
-        
         # ヘッダー行
         headers = ["グループ名", "アカウント名", "メールアドレス", "停止中"]
         for col_idx, header in enumerate(headers, 1):
@@ -1015,6 +1011,12 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
             cell_d = ws.cell(row=row_idx, column=4)
             cell_d.value = "停止中" if user.get('isDisabled', False) else ""
             cell_d.border = thin_border
+
+            # D列が「停止中」の場合、B, C, D列の背景色を淡いグレーに設定
+            if cell_d.value == "停止中":
+                gray_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+                for col in range(2, 5):  # B, C, D列
+                    ws.cell(row=row_idx, column=col).fill = gray_fill
             
             row_idx += 1
         
@@ -1022,21 +1024,26 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
         last_row_of_group = row_idx - 1
         
         if last_row_of_group > first_row_of_group:
-            ws.merge_cells(
-                start_row=first_row_of_group,
-                start_column=1,
-                end_row=last_row_of_group,
-                end_column=1
-            )
-            
-            # 結合したセルの配置を中央揃えに
-            merged_cell = ws.cell(row=first_row_of_group, column=1)
-            merged_cell.alignment = Alignment(vertical='center')
+            merge_cells_in_column_a(ws, first_row_of_group, last_row_of_group)
         
         # グループ間の空白
         row_idx += 1
     
     return row_idx
+
+def merge_cells_in_column_a(ws, start_row, end_row):
+    """A列で縦にセルを結合する"""
+    if end_row > start_row:
+        ws.merge_cells(
+            start_row=start_row,
+            start_column=1,
+            end_row=end_row,
+            end_column=1
+        )
+        
+        # 結合したセルの配置を中央揃えに
+        merged_cell = ws.cell(row=start_row, column=1)
+        merged_cell.alignment = Alignment(vertical='center')
 
 def main():
     """メイン関数"""

@@ -204,10 +204,11 @@ class DataProcessor:
 
   def export_group_user_list(self, filtered_groups: List[Dict[str, Any]]):
     """グループとユーザーの関連をYAMLファイルとして出力"""
-    self.logger.info("group_user_list.yaml と group_user_list_NoUse.yaml を生成中...")
+    self.logger.info("group_user_list.yaml、group_user_list_NoUse.yaml、user_list.yaml、group_user_raw_list.yaml を生成中...")
     
     active_group_data = {}
     inactive_group_data = {}
+    raw_group_data = {}
     
     # ユーザーリスト用のデータ構造を準備
     user_list_data = {}
@@ -231,7 +232,8 @@ class DataProcessor:
         user_info = {
           'username': user_code,
           'email': user.get('email'),
-          'id': str(user.get('id'))
+          'id': str(user.get('id')),
+          'isDisabled': not user.get('valid', True)  # 停止中フラグを追加
         }
         
         # ユーザーリストデータにも追加
@@ -250,6 +252,14 @@ class DataProcessor:
           active_group_data[group_code]['users'].append(user_info)
         else:
           inactive_group_data[group_code]['users'].append(user_info)
+        
+        # raw_group_data にも追加
+        if group_code not in raw_group_data:
+            raw_group_data[group_code] = {
+                'name': group.get('name'),
+                'users': []
+            }
+        raw_group_data[group_code]['users'].append(user_info)
     
     # Everyoneグループを追加
     active_everyone_users = []
@@ -259,7 +269,8 @@ class DataProcessor:
       user_info = {
         'username': user_code,
         'email': user.get('email'),
-        'id': str(user.get('id'))
+        'id': str(user.get('id')),
+        'isDisabled': not user.get('valid', True)  # 停止中フラグを追加
       }
       
       # ユーザーリストデータにも追加
@@ -306,7 +317,11 @@ class DataProcessor:
       with open('user_list.yaml', 'w', encoding='utf-8') as f:
         yaml.dump(user_list_data, f, allow_unicode=True, sort_keys=False)
       
-      self.logger.info("group_user_list.yaml、group_user_list_NoUse.yaml、user_list.yaml の生成が完了しました。")
+      # rawユーザー用のファイル
+      with open('group_user_raw_list.yaml', 'w', encoding='utf-8') as f:
+        yaml.dump(raw_group_data, f, allow_unicode=True, sort_keys=False)
+      
+      self.logger.info("group_user_list.yaml、group_user_list_NoUse.yaml、user_list.yaml、group_user_raw_list.yaml の生成が完了しました。")
     except Exception as e:
       self.logger.error(f"YAMLファイルの生成中にエラーが発生しました: {e}")
 
