@@ -151,9 +151,9 @@ def find_group_user_list_yaml():
     logging.warning("group_user_raw_list.yaml と group_user_list.yaml のどちらも見つかりませんでした")
     return None
 
-def load_field_values_from_tsv(app_dir, field_code):
+def load_field_values_from_json(app_dir, field_code):
     """
-    records.tsvファイルからフィールドの値一覧を取得する
+    records.jsonファイルからフィールドの値一覧を取得する
     
     Args:
         app_dir: アプリディレクトリ
@@ -163,31 +163,40 @@ def load_field_values_from_tsv(app_dir, field_code):
         list: フィールドの値一覧
     """
     try:
-        tsv_files = list(app_dir.glob("*_records.tsv"))
-        if not tsv_files:
-            logging.warning(f"records.tsvファイルが見つかりません: {app_dir}")
+        json_files = list(app_dir.glob("*_records.json"))
+        if not json_files:
+            logging.warning(f"records.jsonファイルが見つかりません: {app_dir}")
             return []
         
-        # 最新のTSVファイルを使用
-        tsv_file = max(tsv_files, key=lambda f: f.stat().st_mtime)
-        logging.info(f"records.tsvファイルを読み込みます: {tsv_file}")
+        # 最新のJSONファイルを使用
+        json_file = max(json_files, key=lambda f: f.stat().st_mtime)
+        logging.info(f"records.jsonファイルを読み込みます: {json_file}")
         
-        # TSVファイルを読み込む
-        df = pd.read_csv(tsv_file, sep='\t', encoding='utf-8')
+        # JSONファイルを読み込む
+        with open(json_file, 'r', encoding='utf-8') as f:
+            records = json.load(f)
         
-        # フィールドコードがヘッダーに含まれるか確認
-        if field_code not in df.columns:
-            logging.warning(f"フィールド '{field_code}' がTSVファイルに見つかりません")
-            return []
-        
-        # フィールドの値を取得し、ユニークなもののみ抽出
-        values = df[field_code].dropna().unique().tolist()
+        # フィールドコードがデータに含まれるか確認
+        values = set()
+        for record in records:
+            if field_code in record and 'value' in record[field_code]:
+                field_value = record[field_code]['value']
+                if isinstance(field_value, list):
+                    # リストの場合、各要素のコードを取得
+                    for item in field_value:
+                        if isinstance(item, dict) and 'code' in item:
+                            values.add(item['code'])
+                elif isinstance(field_value, dict):
+                    # 辞書の場合、文字列に変換して追加
+                    values.add(str(field_value))
+                else:
+                    values.add(field_value)
         
         # 最大100個まで
-        return values[:100]
+        return list(values)[:100]
     
     except Exception as e:
-        logging.warning(f"TSVファイルの読み込みに失敗しました: {e}")
+        logging.warning(f"JSONファイルの読み込みに失敗しました: {e}")
         return []
 
 def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, header_fill, header_alignment, thin_border, form_fields=None, group_yaml_data=None):
@@ -202,7 +211,7 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
     field_header_fill = PatternFill(start_color="CCCCFF", end_color="CCCCFF", fill_type="solid")  # フィールド用の背景色（薄い青）
     
     for field_code in unique_field_codes:
-        values = load_field_values_from_tsv(app_dir, field_code)
+        values = load_field_values_from_json(app_dir, field_code)
         
         if not values:
             continue
@@ -1113,18 +1122,18 @@ def sort_group_members(members):
     Returns:
         list: ソートされたユーザーリスト
     """
-    # .env ファイルからドメイン情報を読み込む
+    # .kintone.env ファイルをYAMLとして読み込む
     try:
         # SCRIPT_DIRを使用して絶対パスを取得
         env_path = Path(SCRIPT_DIR).parent / '.kintone.env'
         
-        # ファイルの存在を確認してからロード
+        # ファイルの存在を確認してからYAMLとして読み込む
         if env_path.exists():
-            logging.info(f".kintone.env ファイルを読み込みます: {env_path}")
-            load_dotenv(env_path)
-            
-            # 環境変数から優先ドメインを取得
-            priority_domain = os.getenv('USER_DOMAIN', '').lower()
+            logging.info(f".kintone.env ファイルをYAMLとして読み込みます: {env_path}")
+            with open(env_path, 'r', encoding='utf-8') as file:
+                env_config = yaml.safe_load(file)
+            # YAMLから優先ドメインを取得
+            priority_domain = env_config.get('user_domain', '').lower() if env_config else ''
             logging.info(f"取得した優先ドメイン: {priority_domain}")
         else:
             logging.warning(f".kintone.env ファイルが見つかりません: {env_path}")
@@ -1136,7 +1145,7 @@ def sort_group_members(members):
     
     # 優先ドメインが空の場合、デフォルト値を設定
     if not priority_domain:
-        priority_domain = 'kirin.co.jp'  # 既定値を設定
+        priority_domain = 'gmail.com'  # 既定値を設定
         logging.info(f"優先ドメインが設定されていないため、デフォルト値'{priority_domain}'を使用します")
     else:
         logging.info(f"優先ドメイン'{priority_domain}'を使用してユーザーをソートします")

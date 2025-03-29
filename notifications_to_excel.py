@@ -68,9 +68,20 @@ def add_field_values_reference(self, ws: Worksheet, row_idx: int,
         self.logger.info(f"フィールド '{field_code}' からの値: {len(values)}個")
                 
         row_idx += 2
+        # MODIFIER型とCREATOR型の場合も適切なヘッダーを表示
+        header_text = ""
+        if field_type == 'GROUP_SELECT':
+            header_text = "通知先種別：フィールド  フィールドタイプ：グループ選択（GROUP_SELECT）"
+        elif field_type == 'USER_SELECT':
+            header_text = "通知先種別：フィールド  フィールドタイプ：ユーザー選択（USER_SELECT）"
+        elif field_type in ['MODIFIER', 'CREATOR']:
+            header_text = f"通知先種別：フィールド  フィールドタイプ：{field_type}"
+        else:
+            header_text = f"通知先種別：フィールド  フィールドタイプ：{field_type}"
+            
         self.setup_cell(
             ws, row_idx, 1, 
-            f"通知先種別：フィールド  フィールドタイプ：{'グループ選択（GROUP_SELECT）' if field_type == 'GROUP_SELECT' else 'ユーザー選択（USER_SELECT）'}",
+            header_text,
             fill_color=self.FIELD_HEADER_COLOR
         )
         ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
@@ -90,6 +101,9 @@ def add_field_values_reference(self, ws: Worksheet, row_idx: int,
             headers = ["グループ名", "アカウント名", "メールアドレス", "停止中"]
         elif field_type == 'USER_SELECT':
             headers = ["", "アカウント名", "メールアドレス", "停止中"]
+        elif field_type in ['MODIFIER', 'CREATOR']:
+            # 更新者・作成者用のヘッダー
+            headers = ["", "アカウント名", "メールアドレス", "停止中"]
         else:
             # その他のタイプでもヘッダーを表示
             headers = ["値"]
@@ -105,7 +119,28 @@ def add_field_values_reference(self, ws: Worksheet, row_idx: int,
         
         for value_idx, value in enumerate(values):
             # 値の種類をログに記録（デバッグ用）
+            # ログファイルに出力されます。setup_logging()関数で設定されたlogsディレクトリ内のファイル
+            # notifications_to_excel_YYYYMMDD_HHMMSS.log に出力されます
             self.logger.info(f"値 {value_idx+1}: タイプ={type(value)}, 値={value}")
+            
+            # MODIFIER型とCREATOR型の処理を追加
+            if field_type in ['MODIFIER', 'CREATOR'] and isinstance(value, str):
+                try:
+                    # 単一のJSONオブジェクト形式の文字列を処理
+                    if '{' in value and '}' in value:
+                        value_fixed = value.replace("'", '"')
+                        obj = json.loads(value_fixed)
+                        if 'code' in obj and 'name' in obj:
+                            self.setup_cell(ws, current_row, 2, obj['name'])
+                            self.setup_cell(ws, current_row, 3, obj['code'])
+                            has_json_values = True
+                            current_row += 1
+                except Exception as e:
+                    self.logger.warning(f"{field_type}解析エラー: {e}, 値: {value}")
+                    # エラー時は通常の値として扱う
+                    self.setup_cell(ws, current_row, 1, value)
+                    current_row += 1
+                continue  # MODIFIER/CREATOR処理後は次のループへ
             
             # 1. JSON形式のオブジェクト解析を試みる
             json_objects = []
