@@ -208,7 +208,13 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
     # 重複するフィールドコードを除去
     unique_field_codes = list(set(field_codes))
     
-    field_header_fill = PatternFill(start_color="CCCCFF", end_color="CCCCFF", fill_type="solid")  # フィールド用の背景色（薄い青）
+    # 通知先種別ごとの背景色を定義
+    field_fill = PatternFill(start_color="9999FF", end_color="9999FF", fill_type="solid")  # 濃い青（デフォルト）
+    field_modifier_fill = PatternFill(start_color="FF9999", end_color="FF9999", fill_type="solid")  # 濃い赤
+    field_creator_fill = PatternFill(start_color="99FF99", end_color="99FF99", fill_type="solid")  # 濃い緑
+    field_status_assignee_fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")  # 濃い黄色
+    field_user_select_fill = PatternFill(start_color="FF99FF", end_color="FF99FF", fill_type="solid")  # 濃いピンク
+    field_group_select_fill = PatternFill(start_color="FF9966", end_color="FF9966", fill_type="solid")  # 濃いオレンジ
     
     for field_code in unique_field_codes:
         values = load_field_values_from_json(app_dir, field_code)
@@ -222,22 +228,38 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
             field_info = form_fields['properties'][field_code]
             field_type = field_info.get('type', '')
         
-        # 見出し
-        row_idx += 2
-        cell = ws.cell(row=row_idx, column=1)
-        cell.value = f"通知先種別：フィールド  フィールドタイプ：{'グループ選択（GROUP_SELECT）' if field_type == 'GROUP_SELECT' else 'ユーザー選択（USER_SELECT）'}"
-        cell.font = Font(bold=True, size=12)
-        cell.fill = field_header_fill
-        row_idx += 1
+        # フィールドタイプに基づいた背景色を選択
+        current_field_fill = field_fill  # デフォルト
+        if field_type == "CREATOR":
+            current_field_fill = field_creator_fill
+        elif field_type == "MODIFIER":
+            current_field_fill = field_modifier_fill
+        elif field_type == "STATUS_ASSIGNEE":
+            current_field_fill = field_status_assignee_fill
+        elif field_type == "USER_SELECT":
+            current_field_fill = field_user_select_fill
+        elif field_type == "GROUP_SELECT":
+            current_field_fill = field_group_select_fill
         
-        # フィールドの見出し
-        type_info = f" ({field_type})" if field_type else ""
-        # A列とB列を結合
-        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
-        cell = ws.cell(row=row_idx, column=1)
-        cell.value = f"フィールド名：{field_code}     ※値は過去データより収集)"
-        cell.font = Font(bold=True, size=13)
-        cell.fill = field_header_fill
+        # 見出し - 1行に統合
+        row_idx += 2
+        
+        # A列：「通知先種別：フィールド」
+        cell_a = ws.cell(row=row_idx, column=1)
+        cell_a.value = "通知先種別：フィールド"
+        cell_a.font = Font(bold=True, size=12)
+        cell_a.fill = field_fill
+        
+        # B列、C列、D列を結合し、フィールドタイプとフィールド名
+        ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=4)
+        cell_b = ws.cell(row=row_idx, column=2)
+        field_type_text = f"フィールドタイプ：{'グループ選択（GROUP_SELECT）' if field_type == 'GROUP_SELECT' else 'ユーザー選択（USER_SELECT）'}"
+        field_name_text = f"通知先：{field_code}"
+        cell_b.value = f"{field_name_text}   {field_type_text} ※値は過去データより収集"
+        cell_b.font = Font(bold=True, size=12)
+        cell_b.fill = current_field_fill  # フィールドタイプに応じた背景色
+        cell_b.alignment = Alignment(wrap_text=True)  # 長いテキストの場合に折り返し
+        
         row_idx += 1
         
         # USER_SELECTまたはGROUP_SELECTの場合はヘッダーを追加
@@ -589,12 +611,12 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     # 通知先種別ごとの背景色を定義
     user_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # 薄い赤
     group_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # 薄い緑
-    field_fill = PatternFill(start_color="CCCCFF", end_color="CCCCFF", fill_type="solid")  # 薄い青
-    field_modifier_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # 薄い赤
-    field_creator_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # 薄い緑
-    field_status_assignee_fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")  # 薄い黄色
-    field_user_select_fill = PatternFill(start_color="FFCCFF", end_color="FFCCFF", fill_type="solid")  # 薄いピンク
-    field_group_select_fill = PatternFill(start_color="FFCC99", end_color="FFCC99", fill_type="solid")  # 薄いオレンジ
+    field_fill = PatternFill(start_color="9999FF", end_color="9999FF", fill_type="solid")  # 濃い青（デフォルト）
+    field_modifier_fill = PatternFill(start_color="FF9999", end_color="FF9999", fill_type="solid")  # 濃い赤
+    field_creator_fill = PatternFill(start_color="99FF99", end_color="99FF99", fill_type="solid")  # 濃い緑
+    field_status_assignee_fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")  # 濃い黄色
+    field_user_select_fill = PatternFill(start_color="FF99FF", end_color="FF99FF", fill_type="solid")  # 濃いピンク
+    field_group_select_fill = PatternFill(start_color="FF9966", end_color="FF9966", fill_type="solid")  # 濃いオレンジ
     
     # ヘッダー行 - フィールドタイプ列を追加
     headers = ["No.", "通知先種別", "フィールドタイプ", "通知先", "フィールドタイプ", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
@@ -705,7 +727,7 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
                     cell.fill = field_fill  # B列のフィールドはfield_fillを使用
                 elif row_fill:
                     cell.fill = row_fill
-            elif col_idx == 5:  # E列
+            elif col_idx == 4 or col_idx == 5:  # E列
                 # E列のフィールドタイプを使用して背景色を設定
                 logging.info(f"++++++++++  form_field_type: {form_field_type}")
                 if form_field_type == "CREATOR":
