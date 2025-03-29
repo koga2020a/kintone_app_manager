@@ -221,8 +221,12 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
         
         # フィールドの見出し
         type_info = f" ({field_type})" if field_type else ""
-        ws.cell(row=row_idx, column=1).value = f"フィールド名：{field_code}     ※値は過去データより収集)"
-        ws.cell(row=row_idx, column=1).font = Font(bold=True)
+        # A列とB列を結合
+        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
+        cell = ws.cell(row=row_idx, column=1)
+        cell.value = f"フィールド名：{field_code}     ※値は過去データより収集)"
+        cell.font = Font(bold=True, size=13)
+        cell.fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
         row_idx += 1
         
         # USER_SELECTまたはGROUP_SELECTの場合はヘッダーを追加
@@ -973,6 +977,7 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
     row_idx += 2
     ws.cell(row=row_idx, column=1).value = "通知先種別：グループ メンバー情報"
     ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
+    ws.cell(row=row_idx, column=1).fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
     row_idx += 1
     
     # 重複するグループコードを除去
