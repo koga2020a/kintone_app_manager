@@ -199,6 +199,8 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
     # 重複するフィールドコードを除去
     unique_field_codes = list(set(field_codes))
     
+    field_header_fill = PatternFill(start_color="CCCCFF", end_color="CCCCFF", fill_type="solid")  # フィールド用の背景色（薄い青）
+    
     for field_code in unique_field_codes:
         values = load_field_values_from_tsv(app_dir, field_code)
         
@@ -216,7 +218,7 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
         cell = ws.cell(row=row_idx, column=1)
         cell.value = f"通知先種別：フィールド  フィールドタイプ：{'グループ選択（GROUP_SELECT）' if field_type == 'GROUP_SELECT' else 'ユーザー選択（USER_SELECT）'}"
         cell.font = Font(bold=True, size=12)
-        cell.fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+        cell.fill = field_header_fill
         row_idx += 1
         
         # フィールドの見出し
@@ -226,7 +228,7 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
         cell = ws.cell(row=row_idx, column=1)
         cell.value = f"フィールド名：{field_code}     ※値は過去データより収集)"
         cell.font = Font(bold=True, size=13)
-        cell.fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+        cell.fill = field_header_fill
         row_idx += 1
         
         # USER_SELECTまたはGROUP_SELECTの場合はヘッダーを追加
@@ -575,6 +577,11 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     ws.column_dimensions["B"].width = 47
     ws.column_dimensions["C"].width = 47
     
+    # 通知先種別ごとの背景色を定義
+    user_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # 薄い赤
+    group_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # 薄い緑
+    field_fill = PatternFill(start_color="CCCCFF", end_color="CCCCFF", fill_type="solid")  # 薄い青
+    
     # ヘッダー行 - フィールドタイプ列を追加
     headers = ["No.", "通知先種別", "フィールドタイプ", "通知先", "フィールドタイプ", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
     for col_idx, header in enumerate(headers, 1):
@@ -673,8 +680,20 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
             cell = ws.cell(row=row_idx, column=col_idx)
             cell.value = value
             cell.border = thin_border
-            if row_fill:
+            
+            # 通知先種別に応じた背景色を設定（B列）
+            if col_idx == 2 and value:
+                if value == "ユーザー":
+                    cell.fill = user_fill
+                elif value == "グループ":
+                    cell.fill = group_fill
+                elif value == "フィールド":
+                    cell.fill = field_fill
+                elif row_fill:
+                    cell.fill = row_fill
+            elif row_fill and col_idx != 2:  # B列以外
                 cell.fill = row_fill
+                
             if col_idx >= 6:  # チェックボックス的な列は中央揃え
                 cell.alignment = Alignment(horizontal='center')
     
@@ -987,9 +1006,11 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
     
     # グループ情報の見出し
     row_idx += 2
+    group_header_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # グループ用の背景色（薄い緑）
+    
     ws.cell(row=row_idx, column=1).value = "通知先種別：グループ"
     ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
-    ws.cell(row=row_idx, column=1).fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+    ws.cell(row=row_idx, column=1).fill = group_header_fill
     row_idx += 1
     
     # 重複するグループコードを除去
@@ -1153,9 +1174,11 @@ def add_user_information_table(ws, row_idx, user_codes, header_font, header_fill
     
     # ユーザー情報の見出し
     row_idx += 2
+    user_header_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # ユーザー用の背景色（薄い赤）
+    
     ws.cell(row=row_idx, column=1).value = "通知先種別：ユーザー 情報"
     ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
-    ws.cell(row=row_idx, column=1).fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+    ws.cell(row=row_idx, column=1).fill = user_header_fill
     row_idx += 1
     
     # 重複するユーザーコードを除去
