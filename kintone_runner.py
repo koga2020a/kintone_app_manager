@@ -983,7 +983,9 @@ def main():
     notifications_parser.add_argument('--id', type=int, help='変換するアプリID')
     
     # 全機能実行コマンド
-    subparsers.add_parser('all', help='すべての機能を順番に実行（複数の出力ファイルが生成されます）')
+    all_parser = subparsers.add_parser('all', help='すべての機能を順番に実行（複数の出力ファイルが生成されます）')
+    all_parser.add_argument('--id', type=int, nargs='+', help='対象とするアプリID（指定したIDのみ処理）')
+    all_parser.add_argument('--not-id', type=int, nargs='+', help='除外するアプリID（指定したID以外を処理）')
     
     # 出力ファイル一覧表示コマンド
     subparsers.add_parser('outputs', help='生成されるExcel/CSV/TSVファイルの一覧と概要を表示')
@@ -1054,6 +1056,17 @@ def main():
     # 設定ファイルの読み込み
     env_file = Path(args.env) if args.env else ENV_FILE
     config = load_env_config(env_file)
+    if 'app_tokens' in config:
+        # アプリIDのフィルタリング
+        if args.command == 'all':
+            if hasattr(args, 'id') and args.id:
+                # --id が指定された場合、指定されたIDのみを対象とする
+                target_ids = [str(id) for id in args.id]
+                config['app_tokens'] = {k: v for k, v in config['app_tokens'].items() if str(k) in target_ids}
+            elif hasattr(args, 'not_id') and args.not_id:
+                # --not-id が指定された場合、指定されたID以外を対象とする
+                exclude_ids = [str(id) for id in args.not_id]
+                config['app_tokens'] = {k: v for k, v in config['app_tokens'].items() if str(k) not in exclude_ids}
     logger.info(f"設定ファイル {env_file} を読み込みました")
     
     # コマンドに応じて処理を実行
