@@ -995,7 +995,9 @@ class KintoneApp:
                     for col in ['A', 'B', 'C', 'D']:
                         if ws[f'{col}{row_num}'].value is not None:
                             ws[f'{col}{row_num}'].font = Font(name='メイリオ', size=9)
-                
+                        ws[f'B{row_num}'].alignment = Alignment(wrap_text=True, vertical='top')
+                        ws[f'C{row_num}'].alignment = Alignment(wrap_text=True, vertical='top')
+                          
                 print(f"JSファイル {js_file.name} のシートを作成しました。")
             except Exception as e:
                 print(f"シート {sheet_name} の作成中にエラーが発生しました: {e}")
