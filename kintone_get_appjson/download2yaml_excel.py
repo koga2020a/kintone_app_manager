@@ -164,27 +164,38 @@ def process_raw_layout(input_file, output_file):
         writer = csv.writer(outfile, delimiter='\t')
         writer.writerows(result)
 
+
 def flatten_record(record):
     """レコードをフラット化し、ネストされた 'value' フィールドを展開"""
     flattened = {}
     for key, value in record.items():
-        if isinstance(value, dict) and 'value' in value:
-            extracted = extract_value(value)
-            formatted_value = format_custom_fields(flattened, key, extracted)
-            if isinstance(extracted, dict):
-                for sub_key, sub_value in extracted.items():
-                    if key == 'value':
-                        continue
-                    flattened[sub_key] = clean_string(sub_value)
+        extracted = None
+        formatted_value = None
+        sub_key = None
+       
+        if isinstance(value, dict):
+            if 'value' in value:
+                extracted = extract_value(value)
+                formatted_value = format_custom_fields(flattened, key, extracted)
+                if isinstance(extracted, dict): # システムフィールドのとき  作成者(type:CREATER)、更新者(TYPE:MODIFIER)
+                    for sub_key, sub_value in extracted.items():
+                        flattened[key] = replace_custom_format(formatted_value)
+                else:
+                    flattened[key] = replace_custom_format(formatted_value)
+            elif 'type' in value and 'value' in value:
+                if isinstance(value['value'], dict):
+                    for sub_key, sub_value in value['value'].items():
+                        flattened[sub_key] = clean_string(sub_value)
+                else:
+                    flattened[key] = clean_string(value['value'])
             else:
-                flattened[key] = replace_custom_format(formatted_value)
-        else:
-            if isinstance(value, dict):
                 for sub_key, sub_value in value.items():
                     flattened[sub_key] = extract_value(sub_value)
-            else:
-                flattened[key] = clean_string(value)
+        else:
+            flattened[key] = clean_string(value)
+       
     return flattened
+
 
 def extract_value(field_data):
     """フィールドデータから値を抽出"""
