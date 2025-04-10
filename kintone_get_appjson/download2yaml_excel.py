@@ -888,7 +888,7 @@ class KintoneApp:
             return {"desktop": {"js": []}}
 
     def download_app_data(self):
-        endpoints = {
+        ''' endpoints = {
             "form": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/form.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
             "record_acl": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/record/acl.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
             "field_acl": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/field/acl.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
@@ -899,13 +899,64 @@ class KintoneApp:
             "process_management": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/status.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
             "plugins": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/plugins.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
             "app_notifications": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/notifications/general.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
-            "record_notifications": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/notifications/perRecord.json", "auth_type": "X-Cybozu-API-Token"},
             "reminder_notifications": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/notifications/reminder.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
             "app_acl": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/acl.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
             "actions": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/actions.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
             "graphs": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/reports.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
             "general_notifications": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/notifications/general.json?app={self.appid}", "auth_type": "X-Cybozu-API-Token"},
-        }
+            "record_notifications": {"url": f"https://{self.subdomain}.cybozu.com/k/v1/app/notifications/perRecord.json", "auth_type": "X-Cybozu-API-Token"},
+        } '''
+        def build_kintone_endpoints(subdomain, appid):
+            """
+            Kintoneのエンドポイント設定を構築する関数
+            
+            Args:
+                subdomain: Kintoneのサブドメイン
+                appid: アプリケーションID
+            
+            Returns:
+                dict: エンドポイント設定の辞書
+            """
+            base_url = f"https://{subdomain}.cybozu.com/k/v1"
+            auth_type = "X-Cybozu-API-Token"
+            
+            def create_endpoint(path, with_app_param=True):
+                """エンドポイント情報を作成する内部関数"""
+                url = f"{base_url}/{path}"
+                if with_app_param:
+                    url += f"?app={appid}"
+                return {"url": url, "auth_type": auth_type}
+            
+            # 標準的なエンドポイント（appidを含む）
+            standard_paths = {
+                "form": "form.json",
+                "app_acl": "app/acl.json",
+                "views": "app/views.json",
+                "graphs": "app/reports.json",
+                "plugins": "app/plugins.json",
+                "actions": "app/actions.json",
+                "field_acl": "field/acl.json",
+                "settings": "app/settings.json",
+                "record_acl": "record/acl.json",
+                "form_fields": "app/form/fields.json",
+                "form_layout": "app/form/layout.json",
+                "process_management": "app/status.json",
+                "app_notifications": "app/notifications/general.json",
+                "general_notifications": "app/notifications/general.json",
+                "reminder_notifications": "app/notifications/reminder.json",
+                "record_notifications": "app/notifications/perRecord.json",
+            }
+            
+            # エンドポイント設定を構築
+            endpoints = {}
+            
+            # エンドポイントを追加
+            endpoints.update({key: create_endpoint(path) for key, path in standard_paths.items()})
+            
+            return endpoints
+
+        endpoints = build_kintone_endpoints(self.subdomain, self.appid)
+
         js_info = []
         for name, endpoint in endpoints.items():
             url = endpoint["url"]
