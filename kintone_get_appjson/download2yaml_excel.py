@@ -1147,7 +1147,7 @@ class KintoneApp:
                             ws[f'{col}{row_num}'].font = Font(name='メイリオ', size=9)
                         ws[f'B{row_num}'].alignment = Alignment(wrap_text=True, vertical='top')
                         ws[f'C{row_num}'].alignment = Alignment(wrap_text=True, vertical='top')
-                        ws[f'D{row_num}'].alignment = Alignment(wrap_text=False, horizontal='center', vertical='center')
+                        ws[f'D{row_num}'].alignment = Alignment(wrap_text=False, horizontal='left', vertical='center')
 
                 print(f"JSファイル {js_file.name} のシートを作成しました。")
             except Exception as e:
