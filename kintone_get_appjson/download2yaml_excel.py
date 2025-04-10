@@ -225,6 +225,7 @@ def format_custom_fields(record, key, value):
 def extract_field_codes_with_lines(filepath):
     """JavaScriptファイルからフィールドコードの使用箇所を抽出"""
     patterns = [
+        re.compile(r'value\[\s*["\']([\w-]+)["\']\s*\]'),
         re.compile(r'record\[\s*["\']([\w-]+)["\']\s*\]'),
         re.compile(r'kintone\.app\.record\.\w+\(\s*["\']([\w-]+)["\']'),
         re.compile(r'event\.record\.([\w-]+)\.value'),
