@@ -15,6 +15,7 @@ from bs4 import BeautifulSoup
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, PatternFill, Border, Side, Font
 from openpyxl.utils.cell import column_index_from_string, get_column_letter, coordinate_from_string
+from typing import Union
 
 # ─── 補助関数 ─────────────────────────────────────────────
 def process_file(layout_file_path, fields_file_path, output_file):
@@ -227,6 +228,7 @@ def extract_field_codes_with_lines(filepath):
         re.compile(r'record\[\s*["\']([\w-]+)["\']\s*\]'),
         re.compile(r'kintone\.app\.record\.\w+\(\s*["\']([\w-]+)["\']'),
         re.compile(r'event\.record\.([\w-]+)\.value'),
+        re.compile(r'\["([^"]+)"\]\)\]\)},fanction\(\){'),
     ]
     result = defaultdict(list)
     try:
@@ -625,6 +627,143 @@ class ExcelFormatter:
         self.wb.save(self.filename)
         print(f"Excelファイル '{self.filename}' が作成されました。")
 
+
+import json
+import os
+
+class PropertyInfo:
+    def __init__(self, key, code, is_subtable=False, subtable_key=None):
+        self.key = key
+        self.code = code
+        self.is_subtable = is_subtable
+        self.subtable_key = subtable_key
+
+    def __repr__(self):
+        return f"PropertyInfo(key='{self.key}', code='{self.code}', is_subtable={self.is_subtable}, subtable_key='{self.subtable_key}')"
+
+
+# ─── PropertyFieldMapper クラス ─────────────────────────────────────────────
+
+class PropertyFieldMapper:
+    def __init__(self, properties: dict):
+        self.key_to_info = {}
+        self.code_to_info = {}
+        self._parse_properties(properties)
+
+    @classmethod
+    def from_json_file(cls, path: str):
+        """
+        JSONファイルパスからPropertyFieldMapperを作成。
+        ファイルが存在しない・形式不正の場合は例外を投げる。
+        """
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"ファイルが存在しません: {path}")
+
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"JSONの読み込みに失敗しました: {e}")
+
+        if "properties" not in data or not isinstance(data["properties"], dict):
+            raise ValueError("JSONの形式が不正です: 'properties' フィールドが見つかりません")
+
+        return cls(data["properties"])
+
+
+    def export_debug_info(self, filename: str):
+        """
+        全フィールド情報を指定ファイル名でCSV出力（実行ディレクトリ）。
+        出力項目：display_key, display_code, is_subtable, subtable_key
+        """
+        try:
+            with open(filename, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(["display_key", "display_code", "is_subtable", "subtable_key"])
+                for info in self.code_to_info.values():
+                    display_key = self.get_display_key_by_code(info.code)
+                    display_code = self.get_display_code_by_code(info.code)
+                    writer.writerow([
+                        info.code,
+                        display_key,
+                        display_code,
+                        str(info.is_subtable),
+                        info.subtable_key or ""
+                    ])
+            print(f"[OK] フィールド情報を '{filename}' に出力しました。")
+        except Exception as e:
+            print(f"[ERROR] 出力失敗: {e}")
+            
+    def _parse_properties(self, properties: dict):
+        for key, value in properties.items():
+            code = value.get("code")
+            prop_type = value.get("type")
+
+            if prop_type == "SUBTABLE":
+                fields = value.get("fields", {})
+                for sub_key, sub_value in fields.items():
+                    sub_code = sub_value.get("code")
+                    info = PropertyInfo(
+                        key=sub_key,
+                        code=sub_code,
+                        is_subtable=True,
+                        subtable_key=key
+                    )
+                    self.key_to_info[sub_key] = info
+                    self.code_to_info[sub_code] = info
+
+                table_info = PropertyInfo(
+                    key=key,
+                    code=code,
+                    is_subtable=False,
+                    subtable_key=None
+                )
+                self.key_to_info[key] = table_info
+                self.code_to_info[code] = table_info
+            else:
+                info = PropertyInfo(
+                    key=key,
+                    code=code,
+                    is_subtable=False,
+                    subtable_key=None
+                )
+                self.key_to_info[key] = info
+                self.code_to_info[code] = info
+
+    def get_by_key(self, key):
+        return self.key_to_info.get(key)
+
+    def get_by_code(self, code):
+        if code not in self.code_to_info:
+            return code
+        return self.code_to_info.get(code)
+
+    def get_display_key_by_code(self, code: str) -> Union[str, None]:
+        try:
+            info = self.get_by_code(code)
+            if not info:
+                return None
+            if isinstance(info, str):
+                return info
+            if info.is_subtable:
+                subtable_info = self.get_by_key(info.subtable_key)
+                return f"{subtable_info.key}[{info.key}]"
+            return info.key
+        except Exception as e:
+            import traceback
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            print(f"エラーが発生しました: {error_msg}")  # デバッグ用の出力
+            return error_msg
+
+    def get_display_code_by_code(self, code: str) -> Union[str, None]:
+        info = self.get_by_code(code)
+        if not info:
+            return None
+        if info.is_subtable:
+            subtable_info = self.get_by_key(info.subtable_key)
+            return f"{subtable_info.code}[{info.code}]"
+        return info.code
+
 # ─── KintoneApp クラス ─────────────────────────────────────────────
 class KintoneApp:
     def __init__(self, appid, api_token=None, subdomain=None, username=None, password=None, config_path='config_UserAccount.yaml'):
@@ -857,72 +996,69 @@ class KintoneApp:
         if s_groups:
             formatter.draw_l_line(s_groups, background_color='D4E4F4')
 
+
     def _write_js_field_code_usage(self, formatter):
         js_dir = self.base_dir / 'javascript'
         # まず、.js_kaigyo.jsファイルを準備
         prepare_kaigyo_files(js_dir)
-        field_codes_map = scan_directory_for_field_codes_with_lines(js_dir)
+        field_codes_by_js_line_map = scan_directory_for_field_codes_with_lines(js_dir)
         field_codes_yaml_path = self.base_dir / f"{self.appid}_field_codes_usage_at_javascript.yaml"
         with open(field_codes_yaml_path, 'w', encoding='utf-8') as f:
-            yaml.dump(field_codes_map, f, allow_unicode=True, sort_keys=False)
-        print(f"フィールドコードの使用箇所情報を {field_codes_yaml_path} に保存しました。")
+            yaml.dump( field_codes_by_js_line_map, f, allow_unicode=True, sort_keys=False)
+        print(f"フィールドコードのjs内での使用行番号情報を {field_codes_yaml_path} に保存しました。")
         formatter.set_by_out02_tsv(self.base_dir / f"{self.appid}_layout_structured.tsv")
         ws = formatter.ws
         for row in range(3, ws.max_row + 1):
             field_code_cell = ws.cell(row=row, column=column_index_from_string('BA'))
             field_code = field_code_cell.value
-            if field_code and field_code in field_codes_map:
-                usage_info = field_codes_map[field_code]
+            if field_code and field_code in  field_codes_by_js_line_map:
+                usage_info =  field_codes_by_js_line_map[field_code]
                 usage_text = ""
                 for js_file, line_numbers in usage_info.items():
                     usage_text += f"{js_file}: {', '.join(map(str, line_numbers))}\n"
                 bd_cell = ws.cell(row=row, column=column_index_from_string('BD'))
                 bd_cell.value = usage_text.strip()
                 bd_cell.font = formatter.font
-        
+       
         # JSファイル別にシートを作成して内容を表示
-        self._create_js_code_sheets(formatter.wb, field_codes_map)
+        self._create_js_code_sheets(formatter.wb,  field_codes_by_js_line_map)
 
-    def _create_js_code_sheets(self, workbook, field_codes_map):
+    def _create_js_code_sheets(self, workbook, field_codes_by_js_line_map):
         """各JSファイルの内容を別シートに表示し、フィールドコードの使用箇所を強調表示する"""
         js_dir = self.base_dir / 'javascript'
-        
-        # フィールドコードとその表示名の対応を取得
-        field_name_map = {}
+
+        # PropertyFieldMapperを使用してフィールドコードとその表示名の対応を取得
         try:
-            with open(self.json_dir / f"{self.appid}_form_fields.json", 'r', encoding='utf-8') as f:
-                fields_data = json.load(f)
-                properties = fields_data.get('properties', {})
-                for field_code, field_info in properties.items():
-                    label = field_info.get('label', field_code)
-                    field_name_map[field_code] = label
+            property_mapper = PropertyFieldMapper.from_json_file(self.json_dir / f"{self.appid}_form_fields.json")
         except Exception as e:
             print(f"フィールド情報の読み込みエラー: {e}")
-        
+            return
+
+        property_mapper.export_debug_info(self.base_dir / f"{self.appid}_field_info_debug.csv")
+
         # 背景色の設定
         light_blue_fill = PatternFill(start_color="DEEBF7", end_color="DEEBF7", fill_type="solid")
         light_green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
         dark_green_fill = PatternFill(start_color="C6E0B4", end_color="C6E0B4", fill_type="solid")
-        
+
         # 各JSファイルに対してシートを作成
         for js_file in js_dir.glob('*.js'):
             try:
                 # ファイルの内容を読み込む
                 with open(js_file, 'r', encoding='utf-8', errors='replace') as f:
                     lines = f.readlines()
-                
-                
+
                 # シート名はファイル名の右端から31文字以内に設定
                 sheet_name = js_file.name.replace('._kaigyo_.js', '.js')[-31:]
-                
+
                 # シートが既に存在する場合は削除
                 if sheet_name in workbook.sheetnames:
                     ws = workbook[sheet_name]
                     workbook.remove(ws)
-                
+
                 # 新しいシートを作成
                 ws = workbook.create_sheet(sheet_name)
-                
+
                 # ヘッダー行の設定
                 ws['A1'] = 'ファイル名:'
                 ws['B1'] = js_file.name.replace('._kaigyo_.js', '.js')
@@ -932,11 +1068,11 @@ class KintoneApp:
                     ws['C1'].fill = PatternFill(start_color="FFFF0000", end_color="FFFF0000", fill_type="solid")
                     ws['C1'].font = Font(color="FFFFFF", bold=True)
                     ws['C1'].alignment = Alignment(vertical='center')
-                
+
                 # A1, B1に淡い水色の背景色を設定
                 ws['A1'].fill = light_blue_fill
                 ws['B1'].fill = light_blue_fill
-                
+
                 # テーブルヘッダーの設定
                 ws['A3'] = '行番号'
                 ws['A3'].alignment = Alignment(horizontal='center', vertical='center')
@@ -946,42 +1082,45 @@ class KintoneApp:
                 ws['C3'].alignment = Alignment(horizontal='center', vertical='center')
                 ws['D3'] = 'ソースコード'
                 ws['D3'].alignment = Alignment(horizontal='center', vertical='center')
-                
+
                 # A3, B3, C3, D3に淡い緑色の背景色を設定
                 ws['A3'].fill = light_green_fill
                 ws['B3'].fill = light_green_fill
                 ws['C3'].fill = light_green_fill
                 ws['D3'].fill = dark_green_fill
-                
+
                 # 列幅の設定
                 ws.column_dimensions['A'].width = 10
                 ws.column_dimensions['B'].width = 34
                 ws.column_dimensions['C'].width = 34
                 ws.column_dimensions['D'].width = 140
-                
+
                 # 使用されているフィールドコードとその行番号を特定
                 field_usage = {}
-                for field_code, usage_info in field_codes_map.items():
+                for field_code, usage_info in field_codes_by_js_line_map.items():
                     if js_file.name in usage_info:
                         line_numbers = usage_info[js_file.name]
                         for line_num in line_numbers:
                             if line_num <= len(lines):
                                 if line_num not in field_usage:
                                     field_usage[line_num] = []
-                                field_name = field_name_map.get(field_code, "")
+                                try:
+                                    field_name = property_mapper.get_display_key_by_code(field_code)    
+                                except Exception as e:
+                                    field_name = "ERROR"
                                 field_usage[line_num].append((field_name, field_code))
-                
+
                 # コードをセルに表示（500行を超える場合は対象行のみ表示）
                 if len(lines) > 500:
                     # フィールドコードを含む行とその前後10行を特定
                     target_lines = set()
-                    for field_code, usage_info in field_codes_map.items():
+                    for field_code, usage_info in field_codes_by_js_line_map.items():
                         if js_file.name in usage_info:
                             for line_num in usage_info[js_file.name]:
                                 # 前後10行を含める
                                 for i in range(max(1, line_num - 10), min(len(lines) + 1, line_num + 11)):
                                     target_lines.add(i)
-                    
+
                     # ソートして順序を保持
                     target_lines = sorted(target_lines)
                 else:
@@ -991,24 +1130,24 @@ class KintoneApp:
                 for i, line_num in enumerate(target_lines, 1):
                     row_num = i + 4  # 5行目から開始
                     ws[f'A{row_num}'] = line_num
-                    
+
                     if line_num in field_usage:
                         field_names = []
                         field_codes = []
                         for name, code in field_usage[line_num]:
                             field_names.append(name)
                             field_codes.append(code)
-                        
+
                         ws[f'B{row_num}'] = '\n'.join(field_names)
                         ws[f'C{row_num}'] = '\n'.join(field_codes)
-                    
+
                     ws[f'D{row_num}'] = lines[line_num-1].rstrip('\n\r')
                     for col in ['A', 'B', 'C', 'D']:
                         if ws[f'{col}{row_num}'].value is not None:
                             ws[f'{col}{row_num}'].font = Font(name='メイリオ', size=9)
                         ws[f'B{row_num}'].alignment = Alignment(wrap_text=True, vertical='top')
                         ws[f'C{row_num}'].alignment = Alignment(wrap_text=True, vertical='top')
-                          
+
                 print(f"JSファイル {js_file.name} のシートを作成しました。")
             except Exception as e:
                 print(f"シート {sheet_name} の作成中にエラーが発生しました: {e}")
