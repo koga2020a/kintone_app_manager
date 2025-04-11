@@ -20,3 +20,10 @@ old_*
 *.yaml
 *.yml
 *.ini
+*.pyc
+*.pickle
+*.pkl
+*.pickle.gz
+*.pkl.gz
+*.pickle.bz2
+*.pkl.bz2

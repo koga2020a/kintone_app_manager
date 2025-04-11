@@ -287,7 +287,7 @@ def get_user_group_info(config, logger, output_format="excel"):
 
 def get_user_group_info_direct(config, logger, output_format="pickle"):
     """
-    kintone_userlib を使用してユーザーとグループ情報を取得し、pickleで保存
+    kintone_get_user_group_direct の機能を呼び出してユーザーとグループ情報を取得し、pickleで保存
     """
     # モジュールが利用可能かチェック
     if not KINTONE_USERLIB_AVAILABLE:
@@ -305,44 +305,39 @@ def get_user_group_info_direct(config, logger, output_format="pickle"):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     pickle_file = OUTPUT_DIR / f"kintone_users_groups_{timestamp}.pickle"
     
+    script_path = USER_GROUP_DIR / "get_user_group_direct.py"
+    
+    if not script_path.exists():
+        logger.error(f"スクリプトファイルが見つかりません: {script_path}")
+        return False
+    
+    cmd = [
+        sys.executable, 
+        str(script_path),
+        "--subdomain", config["subdomain"],
+        "--username", config["username"],
+        "--password", config["password"],
+        "--output", str(pickle_file)
+    ]
+    
     try:
-        # Kintoneクライアントの初期化
-        logger.info("認証情報を設定中...")
-        client = KintoneClient(config["subdomain"], config["username"], config["password"], logger)
-
-        # データの取得
-        logger.info("全ユーザーを取得中...")
-        all_users = client.get_all_users()
-
-        logger.info("全グループを取得中...")
-        all_groups = client.get_all_groups()
-
-        # UserManagerの初期化とデータの設定
-        manager = UserManager()
-        for user in all_users:
-            manager.add_user(user)
-        for group in all_groups:
-            manager.add_group(group)
-
-        # グループとユーザーの関連付け
-        logger.info("グループとユーザーの関連付けを開始します...")
-        for group in all_groups:
-            users_in_group = client.get_users_in_group(group.code)
-            for user in users_in_group:
-                group.add_user(user)
-
-        # pickleで保存
-        logger.info(f"データを {pickle_file} に保存中...")
-        manager.to_pickle(str(pickle_file))
-        logger.info("データの保存が完了しました")
-
+        logger.info(f"実行コマンド: {' '.join(cmd).replace(config['password'], '********')}")
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print(result.stdout) # デバッグ用
+        logger.info(f"ユーザーとグループ情報を {pickle_file} に出力しました")
+        logger.debug(f"出力: {result.stdout}")
         return str(pickle_file)
-    except Exception as e:
+    except subprocess.CalledProcessError as e:
         logger.error(f"ユーザーとグループ情報の取得中にエラーが発生しました: {e}")
+        logger.error(f"標準出力: {e.stdout}")
+        logger.error(f"標準エラー: {e.stderr}")
         log_error_to_file(
             logger, 
             e, 
-            context="ユーザーとグループ情報の取得"
+            command=cmd, 
+            stdout=e.stdout, 
+            stderr=e.stderr, 
+            context="ユーザーとグループ情報の直接取得"
         )
         return False
 
