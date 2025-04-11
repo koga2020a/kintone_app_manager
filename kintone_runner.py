@@ -19,6 +19,14 @@ import re
 from pathlib import Path
 from datetime import datetime
 
+# kintone_userlibの条件付きインポート
+try:
+    from lib.kintone_userlib.client import KintoneClient
+    from lib.kintone_userlib.manager import UserManager
+    KINTONE_USERLIB_AVAILABLE = True
+except ImportError:
+    KINTONE_USERLIB_AVAILABLE = False
+
 # 定数定義
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR / "output"
@@ -259,6 +267,7 @@ def get_user_group_info(config, logger, output_format="excel"):
     try:
         logger.info(f"実行コマンド: {' '.join(cmd).replace(config['password'], '********')}")
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print(result.stdout) # デバッグ用
         logger.info(f"ユーザーとグループ情報を {output_file} に出力しました")
         logger.debug(f"出力: {result.stdout}")
         return str(output_file)
@@ -272,6 +281,67 @@ def get_user_group_info(config, logger, output_format="excel"):
             command=cmd, 
             stdout=e.stdout, 
             stderr=e.stderr, 
+            context="ユーザーとグループ情報の取得"
+        )
+        return False
+
+def get_user_group_info_direct(config, logger, output_format="pickle"):
+    """
+    kintone_userlib を使用してユーザーとグループ情報を取得し、pickleで保存
+    """
+    # モジュールが利用可能かチェック
+    if not KINTONE_USERLIB_AVAILABLE:
+        logger.error("kintone_userlibモジュールがインストールされていません。pip install kintone_userlibを実行してください。")
+        print("エラー: kintone_userlibモジュールがインストールされていません。")
+        print("以下のコマンドを実行してインストールしてください:")
+        print("pip install kintone_userlib")
+        return False
+        
+    logger.info("ユーザーとグループ情報の直接取得を開始します")
+    
+    # 出力ディレクトリが存在しない場合は作成
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    pickle_file = OUTPUT_DIR / f"kintone_users_groups_{timestamp}.pickle"
+    
+    try:
+        # Kintoneクライアントの初期化
+        logger.info("認証情報を設定中...")
+        client = KintoneClient(config["subdomain"], config["username"], config["password"], logger)
+
+        # データの取得
+        logger.info("全ユーザーを取得中...")
+        all_users = client.get_all_users()
+
+        logger.info("全グループを取得中...")
+        all_groups = client.get_all_groups()
+
+        # UserManagerの初期化とデータの設定
+        manager = UserManager()
+        for user in all_users:
+            manager.add_user(user)
+        for group in all_groups:
+            manager.add_group(group)
+
+        # グループとユーザーの関連付け
+        logger.info("グループとユーザーの関連付けを開始します...")
+        for group in all_groups:
+            users_in_group = client.get_users_in_group(group.code)
+            for user in users_in_group:
+                group.add_user(user)
+
+        # pickleで保存
+        logger.info(f"データを {pickle_file} に保存中...")
+        manager.to_pickle(str(pickle_file))
+        logger.info("データの保存が完了しました")
+
+        return str(pickle_file)
+    except Exception as e:
+        logger.error(f"ユーザーとグループ情報の取得中にエラーが発生しました: {e}")
+        log_error_to_file(
+            logger, 
+            e, 
             context="ユーザーとグループ情報の取得"
         )
         return False
@@ -326,6 +396,7 @@ def get_app_json(config, logger, app_id=None):
         try:
             logger.info(f"実行コマンド: python {script_path} {app_id} ****** {config['subdomain']} {config['username']} ********")
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print(result.stdout) # デバッグ用
             logger.info(f"アプリID {app_id} のJSONデータを取得しました")
             logger.debug(f"出力: {result.stdout}")
             return True
@@ -360,6 +431,7 @@ def get_app_json(config, logger, app_id=None):
             try:
                 logger.info(f"実行コマンド: python {script_path} {app_id} ****** {config['subdomain']} {config['username']} ********")
                 result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                print(result.stdout) # デバッグ用
                 logger.info(f"アプリID {app_id} のJSONデータを取得しました")
                 logger.debug(f"出力: {result.stdout}")
             except subprocess.CalledProcessError as e:
@@ -426,8 +498,9 @@ def manage_groups(config, logger, action, params=None):
         return False
     
     try:
-        logger.info(f"実行コマンド: {' '.join(cmd)}")
+        logger.info(f"実行コマンド: {' '.join(cmd)}")   
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print(result.stdout) # デバッグ用
         logger.info(f"グループ操作 '{action}' が完了しました")
         logger.info(f"出力: {result.stdout}")
         
@@ -531,6 +604,7 @@ def generate_acl_excel(config, logger, app_id=None):
         try:
             logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print(result.stdout) # デバッグ用
             logger.info(f"アプリID {app_id} のACL情報を {output_file} に出力しました")
             logger.debug(f"出力: {result.stdout}")
             return str(output_file)
@@ -573,6 +647,7 @@ def generate_acl_excel(config, logger, app_id=None):
             try:
                 logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
                 result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                print(result.stdout) # デバッグ用
                 logger.info(f"アプリID {app_id} のACL情報を {output_file} に出力しました")
                 logger.debug(f"出力: {result.stdout}")
                 generated_files.append(str(output_file))
@@ -655,6 +730,7 @@ def generate_notifications_excel(config, logger, app_id=None):
         try:
             logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print(result.stdout) # デバッグ用
             logger.info(f"アプリID {app_id} の通知設定を {output_file} に出力しました")
             logger.debug(f"出力: {result.stdout}")
             return str(output_file)
@@ -697,6 +773,7 @@ def generate_notifications_excel(config, logger, app_id=None):
             try:
                 logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
                 result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                print(result.stdout) # デバッグ用
                 logger.info(f"アプリID {app_id} の通知設定を {output_file} に出力しました")
                 logger.debug(f"出力: {result.stdout}")
                 generated_files.append(str(output_file))
@@ -945,6 +1022,7 @@ def main():
     # ユーザーグループ取得コマンド
     user_group_parser = subparsers.add_parser('users', help='ユーザーとグループ情報を取得（出力: kintone_users_groups_[日時].xlsx）')
     user_group_parser.add_argument('--format', choices=['excel', 'csv'], default='excel', help='出力形式')
+    user_group_parser.add_argument('--method', choices=['subprocess', 'direct'], default='subprocess', help='取得方法: subprocessは外部スクリプト、directは直接API呼び出し')
     
     # アプリJSON取得コマンド
     app_json_parser = subparsers.add_parser('app', help='アプリのJSONデータを取得（出力: [アプリID]_app_settings.json, [アプリID]_form_layout.json など）')
@@ -1071,9 +1149,33 @@ def main():
     
     # コマンドに応じて処理を実行
     if args.command == 'users':
-        result = get_user_group_info(config, logger, args.format)
-        if result:
-            print(f"ユーザーとグループ情報を {result} に出力しました")
+        # 両方の方法でユーザー情報を取得
+        results = []
+        
+        # 従来の方法で取得
+        subprocess_result = get_user_group_info(config, logger, args.format)
+        if subprocess_result:
+            results.append(subprocess_result)
+            print(f"従来の方法でユーザーとグループ情報を {subprocess_result} に出力しました")
+        else:
+            print("従来の方法でのユーザー情報取得に失敗しました")
+        
+        # direct方法で取得（モジュールがある場合のみ）
+        if KINTONE_USERLIB_AVAILABLE:
+            direct_result = get_user_group_info_direct(config, logger, args.format)
+            if direct_result:
+                results.append(direct_result)
+                print(f"直接API呼び出しでユーザーとグループ情報を {direct_result} に出力しました")
+            else:
+                print("直接API呼び出しでのユーザー情報取得に失敗しました")
+        else:
+            print("警告: kintone_userlibモジュールがインストールされていないため、直接API呼び出し方法は実行できませんでした")
+            print("kintone_userlibを使用するには以下のコマンドを実行してください:")
+            print("pip install kintone_userlib")
+        
+        if not results:
+            print("エラー: すべての方法でユーザー情報取得に失敗しました")
+            sys.exit(1)
             
     elif args.command == 'app':
         result = get_app_json(config, logger, args.id)
@@ -1117,6 +1219,7 @@ def main():
         try:
             logger.info(f"実行コマンド: {' '.join(cmd)}")
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print(result.stdout) # デバッグ用
             logger.info("アプリ設定一覧表の生成が完了しました")
             print(result.stdout)
         except subprocess.CalledProcessError as e:
@@ -1170,9 +1273,30 @@ def main():
         logger.info("すべての機能を順番に実行します")
         
         # 1. ユーザーとグループ情報の取得
-        user_group_file = get_user_group_info(config, logger)
-        if user_group_file:
-            print(f"ユーザーとグループ情報を {user_group_file} に出力しました")
+        user_group_files = []
+        
+        # 従来の方法で取得
+        subprocess_result = get_user_group_info(config, logger)
+        if subprocess_result:
+            user_group_files.append(subprocess_result)
+            print(f"従来の方法でユーザーとグループ情報を {subprocess_result} に出力しました")
+        else:
+            logger.warning("従来の方法でのユーザー情報取得に失敗しました")
+        
+        # direct方法で取得（モジュールがある場合のみ）
+        if KINTONE_USERLIB_AVAILABLE:
+            direct_result = get_user_group_info_direct(config, logger)
+            if direct_result:
+                user_group_files.append(direct_result)
+                print(f"直接API呼び出しでユーザーとグループ情報を {direct_result} に出力しました")
+            else:
+                logger.warning("直接API呼び出しでのユーザー情報取得に失敗しました")
+        else:
+            logger.warning("kintone_userlibモジュールがインストールされていないため、直接API呼び出し方法は実行できませんでした")
+            
+        if not user_group_files:
+            logger.error("すべての方法でユーザー情報取得に失敗しました")
+            print("エラー: ユーザー情報の取得に失敗しました")
         
         # 2. アプリのJSONデータ取得
         app_json_result = get_app_json(config, logger)
@@ -1198,8 +1322,8 @@ def main():
             try:
                 logger.info(f"実行コマンド: {' '.join(cmd)}")
                 result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                print(result.stdout) # デバッグ用
                 logger.info("アプリ設定一覧表の生成が完了しました")
-                print(result.stdout)
             except subprocess.CalledProcessError as e:
                 logger.error(f"アプリ設定一覧表の生成中にエラーが発生しました: {e}")
                 logger.warning("処理を続行します")
