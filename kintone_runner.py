@@ -541,196 +541,98 @@ def find_existing_directory(base_dir, app_id):
 
 # ACLをExcelに変換
 def generate_acl_excel(config, logger, app_id=None):
-    """
-    kintone_get_appjson の aclJson_to_excel.py を使用してACL情報をExcelに変換する
-    
-    Args:
-        config (dict): 設定情報
-        logger (Logger): ロガーオブジェクト
-        app_id (int, optional): アプリID
-    
-    Returns:
-        str: 生成されたExcelファイルのパス、または失敗した場合はFalse
-    """
-    logger.info("ACL情報のExcel変換を開始します")
-    
-    script_path = APPJSON_DIR / "aclJson_to_excel.py"
-    
-    if not script_path.exists():
-        logger.error(f"スクリプトファイルが見つかりません: {script_path}")
-        return False
-    
-    # app_tokensからアプリIDとAPIトークンを取得
-    app_tokens = config.get('app_tokens', {})
-    logger.info(f"app_tokens: {app_tokens}")
-    
-    if app_id:
-        # 特定のアプリIDが指定された場合
-        app_id_str = str(app_id)
-        app_id_int = int(app_id)
-        
-        # 文字列キーと整数キーの両方をチェック
-        if app_id_str in app_tokens:
-            # api_token = app_tokens[app_id_str] # APIトークンのみ確認用
-            pass
-        elif app_id_int in app_tokens:
-            # api_token = app_tokens[app_id_int] # APIトークンのみ確認用
-            pass
-        else:
-            logger.error(f"アプリID {app_id} のAPIトークンが設定されていません")
-            return False
-            
-        # [app_id]_ で始まるディレクトリを探す
-        output_dir = find_existing_directory(OUTPUT_DIR, str(app_id))
-        
-        if not output_dir:
-            logger.error(f"アプリID {app_id} に対応するディレクトリが見つかりません")
-            return False
-        
-        output_file = output_dir / f"{app_id}_acl_report.xlsx"
-        
-        cmd = [
-            sys.executable,
-            str(script_path),
-            str(app_id),
-            "--output", str(output_file)
-        ]
-        
-        try:
-            logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            print(result.stdout) # デバッグ用
-            logger.info(f"アプリID {app_id} のACL情報を {output_file} に出力しました")
-            logger.debug(f"出力: {result.stdout}")
-            return str(output_file)
-        except subprocess.CalledProcessError as e:
-            logger.error(f"ACL情報のExcel変換中にエラーが発生しました: {e}")
-            logger.error(f"標準出力: {e.stdout}")
-            logger.error(f"標準エラー: {e.stderr}")
-            log_error_to_file(
-                logger, 
-                e, 
-                command=cmd, 
-                stdout=e.stdout, 
-                stderr=e.stderr, 
-                context=f"アプリID {app_id} のACL情報のExcel変換"
-            )
-            return False
-    else:
-        # 全てのアプリを処理
-        success = True
-        generated_files = []
-        
-        for app_id in app_tokens.keys():
-            # [app_id]_ で始まるディレクトリを探す
-            output_dir = find_existing_directory(OUTPUT_DIR, str(app_id))
-            
-            if not output_dir:
-                logger.error(f"アプリID {app_id} に対応するディレクトリが見つかりません")
-                success = False
-                continue
-            
-            output_file = output_dir / f"{app_id}_acl_report.xlsx"
-            
-            cmd = [
-                sys.executable,
-                str(script_path),
-                str(app_id),
-                "--output", str(output_file)
-            ]
-            
-            try:
-                logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
-                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-                print(result.stdout) # デバッグ用
-                logger.info(f"アプリID {app_id} のACL情報を {output_file} に出力しました")
-                logger.debug(f"出力: {result.stdout}")
-                generated_files.append(str(output_file))
-            except subprocess.CalledProcessError as e:
-                logger.error(f"アプリID {app_id} のACL情報のExcel変換中にエラーが発生しました: {e}")
-                logger.error(f"標準出力: {e.stdout}")
-                logger.error(f"標準エラー: {e.stderr}")
-                log_error_to_file(
-                    logger, 
-                    e, 
-                    command=cmd, 
-                    stdout=e.stdout, 
-                    stderr=e.stderr, 
-                    context=f"アプリID {app_id} のACL情報のExcel変換"
-                )
-                success = False
-        
-        if success and generated_files:
-            return generated_files
-        elif generated_files:
-            return generated_files
-        else:
-            return False
+    def output_file_formatter(app_id):
+        return f"{app_id}_acl_report.xlsx"
+
+    return generate_user_group_excel_pickle_generic(
+        config=config,
+        logger=logger,
+        script_filename="aclJson_to_excel.py",
+        output_file_formatter=output_file_formatter,
+        title="ACL情報",
+        context="ACL情報のExcel変換",
+        app_id=app_id
+    )
+
 
 # 通知設定をExcelに出力
 def generate_notifications_excel(config, logger, app_id=None):
+    def output_file_formatter(app_id):
+        return f"{app_id}_notifications.xlsx"
+
+    return generate_user_group_excel_pickle_generic(
+        config=config,
+        logger=logger,
+        script_filename="notifications_to_excel.py",
+        output_file_formatter=output_file_formatter,
+        title="通知設定",
+        context="通知設定のExcel変換",
+        app_id=app_id
+    )
+
+
+def generate_user_group_excel_pickle_generic(config, logger, script_filename, output_file_formatter, title, context, app_id=None):
     """
-    kintone_get_appjson の notifications_to_excel.py を使用して通知設定をExcelに変換する
-    
+    共通のExcel変換処理
+
     Args:
         config (dict): 設定情報
         logger (Logger): ロガーオブジェクト
-        app_id (int, optional): アプリID
-    
+        script_filename (str): 実行するスクリプトのファイル名
+        output_file_formatter (callable): app_id を受け取り出力ファイル名（Pathオブジェクトとする）の生成関数
+        title (str): ログ等で使用するタイトル（例："ACL情報" や "通知設定"）
+        context (str): エラー時の文脈情報（app_idごとの詳細なエラーメッセージに使用）
+        app_id (int or None, optional): 特定のアプリIDが指定されている場合、その1件のみ処理します。
+
     Returns:
-        str: 生成されたExcelファイルのパス、または失敗した場合はFalse
+        str or list of str or bool: 生成されたExcelファイルのパス（または複数ある場合はリスト）、もしくは失敗時にFalse
     """
-    logger.info("通知設定のExcel変換を開始します")
-    
-    script_path = APPJSON_DIR / "notifications_to_excel.py"
-    
+    logger.info(f"{title}のExcel変換を開始します")
+
+    script_path = APPJSON_DIR / script_filename
     if not script_path.exists():
         logger.error(f"スクリプトファイルが見つかりません: {script_path}")
         return False
-    
+
     # app_tokensからアプリIDとAPIトークンを取得
     app_tokens = config.get('app_tokens', {})
     logger.info(f"app_tokens: {app_tokens}")
-    
-    if app_id:
-        # 特定のアプリIDが指定された場合
+
+    def process_single_app(app_id):
+        """
+        単一アプリに対するExcel変換処理
+        """
+        # 文字列キーと整数キーの両方をチェック
         app_id_str = str(app_id)
         app_id_int = int(app_id)
-        
-        # 文字列キーと整数キーの両方をチェック
-        if app_id_str in app_tokens:
-            pass
-        elif app_id_int in app_tokens:
-            pass
-        else:
+        if app_id_str not in app_tokens and app_id_int not in app_tokens:
             logger.error(f"アプリID {app_id} のAPIトークンが設定されていません")
             return False
-            
+
         # [app_id]_ で始まるディレクトリを探す
         output_dir = find_existing_directory(OUTPUT_DIR, str(app_id))
-        
         if not output_dir:
             logger.error(f"アプリID {app_id} に対応するディレクトリが見つかりません")
             return False
-        
-        output_file = output_dir / f"{app_id}_notifications.xlsx"
-        
+
+        output_file = output_dir / output_file_formatter(app_id)
+
         cmd = [
             sys.executable,
             str(script_path),
             str(app_id),
             "--output", str(output_file)
         ]
-        
+
         try:
             logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            print(result.stdout) # デバッグ用
-            logger.info(f"アプリID {app_id} の通知設定を {output_file} に出力しました")
+            print(result.stdout)  # デバッグ用
+            logger.info(f"アプリID {app_id} の{title}を {output_file} に出力しました")
             logger.debug(f"出力: {result.stdout}")
             return str(output_file)
         except subprocess.CalledProcessError as e:
-            logger.error(f"通知設定のExcel変換中にエラーが発生しました: {e}")
+            logger.error(f"アプリID {app_id} の{context}中にエラーが発生しました: {e}")
             logger.error(f"標準出力: {e.stdout}")
             logger.error(f"標準エラー: {e.stderr}")
             log_error_to_file(
@@ -739,56 +641,23 @@ def generate_notifications_excel(config, logger, app_id=None):
                 command=cmd, 
                 stdout=e.stdout, 
                 stderr=e.stderr, 
-                context=f"アプリID {app_id} の通知設定のExcel変換"
+                context=f"アプリID {app_id} の{context}"
             )
             return False
+
+    if app_id:
+        return process_single_app(app_id)
     else:
-        # 全てのアプリを処理
         success = True
         generated_files = []
-        
-        for app_id in app_tokens.keys():
-            # [app_id]_ で始まるディレクトリを探す
-            output_dir = find_existing_directory(OUTPUT_DIR, str(app_id))
-            
-            if not output_dir:
-                logger.error(f"アプリID {app_id} に対応するディレクトリが見つかりません")
+        for app_key in app_tokens.keys():
+            ret = process_single_app(app_key)
+            if ret:
+                generated_files.append(ret)
+            else:
                 success = False
-                continue
-            
-            output_file = output_dir / f"{app_id}_notifications.xlsx"
-            
-            cmd = [
-                sys.executable,
-                str(script_path),
-                str(app_id),
-                "--output", str(output_file)
-            ]
-            
-            try:
-                logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
-                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-                print(result.stdout) # デバッグ用
-                logger.info(f"アプリID {app_id} の通知設定を {output_file} に出力しました")
-                logger.debug(f"出力: {result.stdout}")
-                generated_files.append(str(output_file))
-            except subprocess.CalledProcessError as e:
-                logger.error(f"アプリID {app_id} の通知設定のExcel変換中にエラーが発生しました: {e}")
-                logger.error(f"標準出力: {e.stdout}")
-                logger.error(f"標準エラー: {e.stderr}")
-                log_error_to_file(
-                    logger, 
-                    e, 
-                    command=cmd, 
-                    stdout=e.stdout, 
-                    stderr=e.stderr, 
-                    context=f"アプリID {app_id} の通知設定のExcel変換"
-                )
-                success = False
-        
-        if success and generated_files:
-            return generated_files
-        elif generated_files:
+
+        if generated_files:
             return generated_files
         else:
             return False
