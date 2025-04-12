@@ -883,25 +883,25 @@ def main():
     logger = setup_logging()
     logger.info("KintoneRunnerを起動しました")
     
+    def handle_directory_error(e, context=""):
+        """ディレクトリ準備時のエラーハンドリングを行う関数"""
+        logger.error(f"ディレクトリの準備中にエラーが発生しました: {e}")
+        # Excelファイルが開かれているかどうかを確認
+        if "~$" in str(e) or any(temp_file.startswith("~$") for temp_file in str(e).split() if temp_file.startswith("~$")):
+            logger.error("Excelファイルが開かれているため処理を終了します。")
+            print(f"エラー: Excelファイルが開かれているため処理を続行できません。")
+            print("Excelファイルを閉じてから再実行してください。")
+            return True  # sys.exit(1)が必要
+        else:
+            # Excel以外のエラーの場合は警告を表示して続行
+            logger.warning("エラーが発生しましたが、処理を続行します。一部のファイルが正しく処理されない可能性があります。")
+            print(f"警告: ディレクトリの準備中にエラーが発生しました: {e}")
+            print("処理を続行しますが、一部のファイルが正しく処理されない可能性があります。")
+            return False  # 処理を続行
+    
     # ディレクトリの準備（allコマンドの場合のみ実行）
     if args.command == 'all':
         logger.info("ディレクトリの準備を開始します")
-        
-        def handle_directory_error(e):
-            """ディレクトリ準備時のエラーハンドリングを行う関数内関数"""
-            logger.error(f"ディレクトリの準備中にエラーが発生しました: {e}")
-            # Excelファイルが開かれているかどうかを確認
-            if "~$" in str(e) or any(temp_file.startswith("~$") for temp_file in str(e).split() if temp_file.startswith("~$")):
-                logger.error("Excelファイルが開かれているため処理を終了します。")
-                print(f"エラー: Excelファイルが開かれているため処理を続行できません。")
-                print("Excelファイルを閉じてから再実行してください。")
-                return True  # sys.exit(1)が必要
-            else:
-                # Excel以外のエラーの場合は警告を表示して続行
-                logger.warning("エラーが発生しましたが、処理を続行します。一部のファイルが正しく処理されない可能性があります。")
-                print(f"警告: ディレクトリの準備中にエラーが発生しました: {e}")
-                print("処理を続行しますが、一部のファイルが正しく処理されない可能性があります。")
-                return False  # 処理を続行
         
         try:
             prepare_directories()
@@ -912,26 +912,10 @@ def main():
     elif args.command == 'app' and args.id:
         logger.info(f"アプリID {args.id} のディレクトリ準備を開始します")
         
-        def handle_app_directory_error(e):
-            """アプリディレクトリ準備時のエラーハンドリングを行う関数内関数"""
-            logger.error(f"ディレクトリの準備中にエラーが発生しました: {e}")
-            # Excelファイルが開かれているかどうかを確認
-            if "~$" in str(e) or any(temp_file.startswith("~$") for temp_file in str(e).split() if temp_file.startswith("~$")):
-                logger.error("Excelファイルが開かれているため処理を終了します。")
-                print(f"エラー: Excelファイルが開かれているため処理を続行できません。")
-                print("Excelファイルを閉じてから再実行してください。")
-                return True  # sys.exit(1)が必要
-            else:
-                # Excel以外のエラーの場合は警告を表示して続行
-                logger.warning("エラーが発生しましたが、処理を続行します。一部のファイルが正しく処理されない可能性があります。")
-                print(f"警告: ディレクトリの準備中にエラーが発生しました: {e}")
-                print("処理を続行しますが、一部のファイルが正しく処理されない可能性があります。")
-                return False  # 処理を続行
-        
         try:
             prepare_app_directories(args.id)
         except Exception as e:
-            if handle_app_directory_error(e):
+            if handle_directory_error(e, f"アプリID {args.id}"):
                 sys.exit(1)
     
     # 最低限のディレクトリ作成を確保
