@@ -1138,191 +1138,34 @@ def print_group_members(group_data):
             logging.debug(f"    メールアドレス: {user['email']}")
             logging.debug(f"    ID: {user['id']}")
 
+def parse_args():
+    import sys
+    print("=== デバッグ情報: aclJson_to_excel.py ===")
+    print("生の引数情報:", sys.argv)
+    
+    # 環境変数から認証情報を取得
+    subdomain = os.environ.get('KINTONE_SUBDOMAIN')
+    username = os.environ.get('KINTONE_USERNAME')
+    password = os.environ.get('KINTONE_PASSWORD')
+    
+    parser = argparse.ArgumentParser(description='kintoneのACL情報をExcelに出力する')
+    parser.add_argument('app_id', type=int, help='アプリID（必須）')
+    parser.add_argument('--subdomain', default=subdomain, help='kintoneのサブドメイン（必須）')
+    parser.add_argument('--username', default=username, help='kintoneのユーザー名（必須）')
+    parser.add_argument('--password', default=password, help='kintoneのパスワード（必須）')
+    parser.add_argument('--api-token', help='kintoneのAPIトークン（オプション）')
+    parser.add_argument('--output', required=True, help='出力するExcelファイルのパス（必須）')
+    parser.add_argument('--group-master', help='グループマスターファイルのパス（オプション）')
+    parser.add_argument('--log-level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], default='INFO', help='ログレベル（デフォルト: INFO）')
+    
+    args = parser.parse_args()
+    print("パース後の引数情報:", vars(args))
+    print("================================")
+    return args
+
 def main():
-  """
-  スクリプトのエントリーポイント
-  """
-  parser = argparse.ArgumentParser(description='YAMLファイルをExcelファイルに変換するスクリプト')
-  parser.add_argument('header_name', type=str, help='ヘッダー名 (例: 14)')
-  parser.add_argument('--group-master', '-g', type=str, 
-                     default=os.path.join('..', 'kintone_get_user_group', 'group_user_list.yaml'),
-                     help='グループマスタファイルのパス')
-  parser.add_argument('--log-level', type=str, choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-                     default='INFO', help='ログレベル (デフォルト: INFO)')
-  parser.add_argument('--silent', action='store_true', help='ログ出力を抑制する')
-  parser.add_argument('--output', '-o', type=str, help='出力するExcelファイルのパス')
-
-  args = parser.parse_args()
-
-  # ロギングの設定
-  setup_logging(args.log_level, args.silent)
-
-  logging.info(f"処理を開始します: ヘッダー名 = {args.header_name}")
-  
-  header_name = args.header_name
-  group_master_path = args.group_master
-
-  output_dir = os.path.join(os.getcwd(), 'output')
-  logging.debug(f"出力ディレクトリ: {output_dir}")
-
-  # "{header_name}_" で始まるディレクトリを検索
-  matching_dirs = [d for d in os.listdir(output_dir) if d.startswith(f"{header_name}_") and os.path.isdir(os.path.join(output_dir, d))]
-
-  if not matching_dirs:
-    logging.error(f'"{header_name}_" で始まるディレクトリが見つかりません。')
-    sys.exit(1)
-  elif len(matching_dirs) > 1:
-    logging.error(f'複数の "{header_name}_" で始まるディレクトリが見つかりました: {matching_dirs}')
-    logging.error('一意に特定できるようにディレクトリ名を修正してください。')
-    sys.exit(1)
-
-  # 見つかったディレクトリ名からヘッダー部分を除いた名前を取得
-  dir_name_without_header = matching_dirs[0][len(f"{header_name}_"):]
-  
-  # アプリ名_YYYYMMDD_HHMMSS 形式の場合、アプリ名部分のみを抽出
-  app_name = dir_name_without_header.split('_')[0] if '_20' in dir_name_without_header else dir_name_without_header
-  
-  logging.info(f"処理対象アプリ名 = {header_name}, 処理対象 = {app_name}")
-  logging.info(f"対象ディレクトリ: {dir_name_without_header}")
-
-  # 見つかったディレクトリのパスを設定
-  base_dir = os.path.join(output_dir, matching_dirs[0])
-  record_acl_file = os.path.join(base_dir, f"{header_name}_record_acl.yaml")
-  app_acl_file = os.path.join(base_dir, f"{header_name}_app_acl.yaml")
-
-  # 必要なファイルが存在するか確認
-  if not os.path.exists(record_acl_file):
-    logging.error(f'エラー: ファイル "{record_acl_file}" が見つかりません。')
-    sys.exit(1)
-  if not os.path.exists(app_acl_file):
-    logging.error(f'エラー: ファイル "{app_acl_file}" が見つかりません。')
-    sys.exit(1)
-
-  # エンティティタイプマップの作成
-  entity_type_map = load_entity_type_map(header_name, base_dir)
-
-  # グループマスタとフォームフィールドの読み込み
-  field_entities = load_form_fields(header_name, base_dir)
-  group_map = load_group_map(header_name, base_dir, group_master_path, field_entities)
-  if not group_map:
-    logging.warning(f'警告: グループマスタおよびフォームフィールドファイルが正しく読み込まれていません。グループ名はグループコードのまま表示されます。')
-
-  # userName_map の読み込み
-  userName_map = load_userName_list(group_master_path)
-  if not userName_map:
-      logging.warning(f'警告: group_user_list.yaml が正しく読み込まれていません。USERタイプのエンティティは無効として扱われます。: {group_master_path}')
-
-  # グループメンバー情報の読み込みと出力
-  group_members = load_group_members(group_master_path)
-  print_group_members(group_members)
-
-  # record_aclとapp_aclファイルからエンティティを読み込む
-  try:
-    with open(record_acl_file, 'r', encoding='utf-8') as f:
-      record_data = yaml.safe_load(f)
-    with open(app_acl_file, 'r', encoding='utf-8') as f:
-      app_data = yaml.safe_load(f)
-      
-    # 両方のファイルからエンティティを抽出
-    record_entities = set(get_all_entities(record_data))
-    app_entities = set(get_all_entities(app_data))
-    
-    # 全エンティティを結合してソート
-    all_entities = sorted(record_entities.union(app_entities))
-    
-    logging.debug("\n=== 全出現ユーザ/グループ一覧（everyoneを除く） ===")
-    for entity in all_entities:
-      entity_type = entity_type_map.get(entity, 'USER')  # デフォルトは 'USER'
-      if entity_type == 'GROUP':
-        group_info = group_members.get(entity, {})
-        group_name = group_info.get('name', entity)
-        logging.debug(f"\nグループ: {group_name} (コード: {entity})")
-        users = group_info.get('users', [])
-        if users:
-            logging.debug("所属ユーザー:")
-            for user in users:
-                username = user.get('username', '不明')
-                email = user.get('email', '不明')
-                user_id = user.get('id', '不明')
-                logging.debug(f"  - ユーザー名: {username}, メールアドレス: {email}, ID: {user_id}")
-        else:
-            logging.debug("  ※ 所属ユーザーなし")
-      elif entity_type == 'USER':
-        # ユーザー名を表示するためにユーザー情報を取得
-        user_name = userName_map.get(entity, entity)  # マッピングがなければコードを名前として使用
-        logging.debug(f"ユーザー: {entity} (名前: {user_name})")
-      else:
-        # その他のタイプ
-        logging.debug(f"その他エンティティ: {entity} (タイプ: {entity_type})")
-        
-    # 全出現ユーザから重複を除いた一覧の作成
-    permission_target_user_names = set()
-
-    for entity in all_entities:
-        entity_type = entity_type_map.get(entity, 'USER')  # デフォルトは 'USER'
-        if entity_type == 'GROUP':
-            group_info = group_members.get(entity, {})
-            users = group_info.get('users', [])
-            for user in users:
-                user_name = user.get('username', '不明')
-                permission_target_user_names.add(user_name)
-        elif entity_type == 'USER':
-            user_name = userName_map.get(entity, entity)  # マッピングがなければコードを名前として使用
-            permission_target_user_names.add(user_name)
-        # その他のタイプはユーザーではないと仮定
-
-    logging.debug("\n=== 全出現ユーザで重複を除いた単純なユーザ名一覧 ===")
-    for user_name in sorted(permission_target_user_names):
-        logging.debug(f"ユーザー名: {user_name}")
-
-    # 重複を除いた単純なユーザ名一覧をCSVファイルに保存
-    with open(os.path.join(base_dir, f"{header_name}permission_target_user_names.csv"), 'w', encoding='utf-8', newline='') as csvfile:
-        csvwriter = csv.writer(csvfile)
-        csvwriter.writerow(['ユーザー名'])
-        for user_name in sorted(permission_target_user_names):
-            csvwriter.writerow([user_name])
-
-    logging.debug(f'全出現ユーザでユニークユーザー名一覧を {os.path.join(base_dir, f"{header_name}permission_target_user_names.csv")} に保存しました。')
-
-  except Exception as e:
-    logging.error(f"エラー: ACLファイルの読み込みに失敗しました: {str(e)}")
-
-
-  # Excelワークブックの作成
-  wb = Workbook()
-  # デフォルトで作成されるシートを削除
-  default_sheet = wb.active
-  wb.remove(default_sheet)
-
-  # record_acl.yaml を「レコード」シートに変換
-  convert_yaml_to_excel(wb, header_name, base_dir, group_map, entity_type_map, user_map={}, 
-                       acl_type='record', sheet_name='レコード',
-                       userName_map=userName_map, group_members=group_members, permission_target_user_names=permission_target_user_names)
-
-  # app_acl.yaml を「アプリ」シートに変換
-  convert_app_acl_to_excel(wb, header_name, base_dir, group_map, entity_type_map, 
-                          userName_map=userName_map, userValid_map={}, sheet_name='アプリ')
-
-  # 新規追加: レコードシートとアプリシートの権限を比較してマークする
-  compare_permissions_and_mark(wb, group_map, group_members, header_name, base_dir)
-
-  # ファイルを保存
-  output_file = args.output if args.output else os.path.join(base_dir, f"{header_name}_acl.xlsx")
-  try:
-      # 出力ディレクトリが存在しない場合は作成
-      output_dir = os.path.dirname(output_file)
-      if output_dir:
-          os.makedirs(output_dir, exist_ok=True)
-      
-      wb.save(output_file)
-      logging.info(f'変換完了: {output_file}')
-  except PermissionError:
-      logging.error(f'ファイル "{output_file}" が他のプログラムで開かれています。')
-      logging.error('Excelを閉じてから再度実行してください。')
-      sys.exit(1)
-  except Exception as e:
-      logging.error(f'ファイルの保存中に予期せぬエラーが発生しました: {str(e)}')
-      sys.exit(1)
+    args = parse_args()
+    # メイン処理の実装
 
 if __name__ == '__main__':
   main()

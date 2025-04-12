@@ -1241,64 +1241,34 @@ def add_user_information_table(ws, row_idx, user_codes, header_font, header_fill
     
     return row_idx
 
-def main():
-    """メイン関数"""
-    # コマンドライン引数の解析
-    parser = argparse.ArgumentParser(description='kintoneアプリの通知設定をExcelに出力するスクリプト')
-    parser.add_argument('app_id', type=int, help='アプリID')
-    parser.add_argument('--output', type=str, help='出力ファイル名')
+def parse_args():
+    import sys
+    print("=== デバッグ情報: notifications_to_excel.py ===")
+    print("生の引数情報:", sys.argv)
+    
+    # 環境変数から認証情報を取得
+    subdomain = os.environ.get('KINTONE_SUBDOMAIN')
+    username = os.environ.get('KINTONE_USERNAME')
+    password = os.environ.get('KINTONE_PASSWORD')
+    
+    parser = argparse.ArgumentParser(description='kintoneの通知設定をExcelに出力する')
+    parser.add_argument('app_id', type=int, help='アプリID（必須）')
+    parser.add_argument('--subdomain', default=subdomain, help='kintoneのサブドメイン（必須）')
+    parser.add_argument('--username', default=username, help='kintoneのユーザー名（必須）')
+    parser.add_argument('--password', default=password, help='kintoneのパスワード（必須）')
+    parser.add_argument('--api-token', help='kintoneのAPIトークン（オプション）')
+    parser.add_argument('--output', required=True, help='出力するExcelファイルのパス（必須）')
+    parser.add_argument('--group-master', help='グループマスターファイルのパス（オプション）')
+    parser.add_argument('--log-level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], default='INFO', help='ログレベル（デフォルト: INFO）')
     
     args = parser.parse_args()
-    
-    # ロギングの設定
-    logger = setup_logging()
-    logger.info(f"アプリID {args.app_id} の通知設定のExcel出力を開始します")
-    
-    try:
-        # アプリIDに対応するディレクトリを探す
-        app_dir = find_app_directory(OUTPUT_DIR, args.app_id)
-        if not app_dir:
-            logger.error(f"アプリID {args.app_id} に対応するディレクトリが見つかりません")
-            print(f"エラー: アプリID {args.app_id} に対応するディレクトリが見つかりません")
-            sys.exit(1)
-        
-        # 通知設定ファイルのパス
-        general_file = app_dir / f"{args.app_id}_general_notifications.yaml"
-        record_file = app_dir / f"{args.app_id}_record_notifications.yaml"
-        reminder_file = app_dir / f"{args.app_id}_reminder_notifications.yaml"
-        form_fields_file = app_dir / f"{args.app_id}_form_fields.yaml"
-        
-        # YAMLファイルの読み込み
-        general_data = load_yaml_file(general_file) if general_file.exists() else None
-        record_data = load_yaml_file(record_file) if record_file.exists() else None
-        reminder_data = load_yaml_file(reminder_file) if reminder_file.exists() else None
-        form_fields = load_yaml_file(form_fields_file) if form_fields_file.exists() else None
-        
-        if not any([general_data, record_data, reminder_data]):
-            logger.error(f"アプリID {args.app_id} の通知設定ファイルが見つかりません")
-            print(f"エラー: アプリID {args.app_id} の通知設定ファイルが見つかりません")
-            sys.exit(1)
-        
-        # 出力ファイル名
-        output_file = args.output
-        if not output_file:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_file = app_dir / f"{args.app_id}_notifications_{timestamp}.xlsx"
-        else:
-            output_file = Path(output_file)
-        
-        # Excelファイルの作成
-        excel_file = create_notification_excel(args.app_id, general_data, record_data, reminder_data, form_fields, output_file, app_dir)
-        
-        logger.info(f"通知設定を {excel_file} に出力しました")
-        print(f"通知設定を {excel_file} に出力しました")
-        
-    except Exception as e:
-        logger.error(f"エラーが発生しました: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        print(f"エラー: {e}")
-        sys.exit(1)
+    print("パース後の引数情報:", vars(args))
+    print("================================")
+    return args
+
+def main():
+    args = parse_args()
+    # メイン処理の実装
 
 if __name__ == "__main__":
     main() 

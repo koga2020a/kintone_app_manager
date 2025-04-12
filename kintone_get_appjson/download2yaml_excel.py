@@ -16,6 +16,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, PatternFill, Border, Side, Font
 from openpyxl.utils.cell import column_index_from_string, get_column_letter, coordinate_from_string
 from typing import Union
+import argparse
 
 # ─── 補助関数 ─────────────────────────────────────────────
 def process_file(layout_file_path, fields_file_path, output_file):
@@ -1304,21 +1305,33 @@ class KintoneApp:
         self.create_excel_report()
         self.export_all_records()
 
-# ─── エントリーポイント ─────────────────────────────────────────────
+def parse_args():
+    import sys
+    print("=== デバッグ情報: download2yaml_excel.py ===")
+    print("生の引数情報:", sys.argv)
+    
+    # 環境変数から認証情報を取得
+    subdomain = os.environ.get('KINTONE_SUBDOMAIN')
+    username = os.environ.get('KINTONE_USERNAME')
+    password = os.environ.get('KINTONE_PASSWORD')
+    api_token = os.environ.get('KINTONE_API_TOKEN')
+    
+    parser = argparse.ArgumentParser(description='kintoneのアプリ設定をYAMLとExcelに出力する')
+    parser.add_argument('app_id', type=int, help='アプリID（必須）')
+    parser.add_argument('--subdomain', default=subdomain, help='kintoneのサブドメイン（必須）')
+    parser.add_argument('--username', default=username, help='kintoneのユーザー名（必須）')
+    parser.add_argument('--password', default=password, help='kintoneのパスワード（必須）')
+    parser.add_argument('--api-token', default=api_token, help='kintoneのAPIトークン（オプション）')
+    parser.add_argument('--output-dir', required=True, help='出力ディレクトリのパス（必須）')
+    parser.add_argument('--log-level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], default='INFO', help='ログレベル（デフォルト: INFO）')
+    parser.add_argument('--silent', action='store_true', help='サイレントモード（ログ出力を抑制）')
+    
+    args = parser.parse_args()
+    print("パース後の引数情報:", vars(args))
+    print("================================")
+    return args
+
 if __name__ == "__main__":
-    if len(sys.argv) == 2:
-        appid = sys.argv[1]
-        app = KintoneApp(appid)
-        app.run()
-    elif len(sys.argv) == 6:
-        appid = sys.argv[1]
-        api_token = sys.argv[2]
-        subdomain = sys.argv[3]
-        username = sys.argv[4]
-        password = sys.argv[5]
-        app = KintoneApp(appid, api_token, subdomain, username, password)
-        app.run()
-    else:
-        print("Usage: python script.py <appid> [<api_token> <subdomain> <username> <password>]")
-        print("Note: 認証情報は config_UserAccount.yaml からも読み込めます")
-        sys.exit(1)
+    args = parse_args()
+    app = KintoneApp(args.app_id, args.api_token, args.subdomain, args.username, args.password)
+    app.run()

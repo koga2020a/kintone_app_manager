@@ -346,104 +346,13 @@ def get_app_json(config, logger, app_id=None):
     """
     kintone_get_appjson の機能を呼び出してアプリのJSONデータを取得
     """
-    logger.info("アプリのJSONデータ取得を開始します")
-    
-    script_path = APPJSON_DIR / "download2yaml_excel.py"
-    
-    if not script_path.exists():
-        logger.error(f"スクリプトファイルが見つかりません: {script_path}")
-        return False
-    
-    # 出力ディレクトリが存在しない場合は作成
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    
-    # app_tokensからアプリIDとAPIトークンを取得
-    app_tokens = config.get('app_tokens', {})
-    
-    # デバッグ用
-    logger.info(f"app_tokens: {dict((k, v[:4] + '*'*(len(v)-8) + v[-4:]) for k,v in app_tokens.items())}")
-    #logger.info(f"app_tokens keys type: {[type(k) for k in app_tokens.keys()]}")
-    
-    if app_id:
-        # 特定のアプリIDが指定された場合
-        app_id_str = str(app_id)
-        app_id_int = int(app_id)
-        
-        # 文字列キーと整数キーの両方をチェック
-        if app_id_str in app_tokens:
-            api_token = app_tokens[app_id_str]
-        elif app_id_int in app_tokens:
-            api_token = app_tokens[app_id_int]
-        else:
-            logger.error(f"アプリID {app_id} のAPIトークンが設定されていません")
-            return False
-            
-        cmd = [
-            sys.executable,
-            str(script_path),
-            str(app_id),
-            api_token,
-            config["subdomain"],
-            config["username"],
-            config["password"]
-        ]
-        
-        try:
-            logger.info(f"実行コマンド: python {script_path} {app_id} ****** {config['subdomain']} {config['username']} ********")
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            print(result.stdout) # デバッグ用
-            logger.info(f"アプリID {app_id} のJSONデータを取得しました")
-            logger.debug(f"出力: {result.stdout}")
-            return True
-        except subprocess.CalledProcessError as e:
-            logger.error(f"アプリのJSONデータ取得中にエラーが発生しました: {e}")
-            logger.error(f"標準出力: {e.stdout}")
-            logger.error(f"標準エラー: {e.stderr}")
-            log_error_to_file(
-                logger, 
-                e, 
-                command=cmd, 
-                stdout=e.stdout, 
-                stderr=e.stderr, 
-                context=f"アプリID {app_id} のJSONデータ取得"
-            )
-            return False
-    else:
-        # 全てのアプリを処理
-        success = True
-        for app_id, api_token in app_tokens.items():
-            logger.info(f"アプリID {app_id} の処理を開始します")
-            cmd = [
-                sys.executable,
-                str(script_path),
-                str(app_id),
-                api_token,
-                config["subdomain"],
-                config["username"],
-                config["password"]
-            ]
-            
-            try:
-                logger.info(f"実行コマンド: python {script_path} {app_id} ****** {config['subdomain']} {config['username']} ********")
-                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-                print(result.stdout) # デバッグ用
-                logger.info(f"アプリID {app_id} のJSONデータを取得しました")
-                logger.debug(f"出力: {result.stdout}")
-            except subprocess.CalledProcessError as e:
-                logger.error(f"アプリID {app_id} のJSONデータ取得中にエラーが発生しました: {e}")
-                logger.error(f"標準出力: {e.stdout}")
-                logger.error(f"標準エラー: {e.stderr}")
-                log_error_to_file(
-                    logger, 
-                    e, 
-                    command=cmd, 
-                    stdout=e.stdout, 
-                    stderr=e.stderr, 
-                    context=f"アプリID {app_id} のJSONデータ取得"
-                )
-                success = False
-                
-        return success
+    return run_app_script(
+        config=config,
+        logger=logger,
+        script_filename="download2yaml_excel.py",
+        app_id=app_id,
+        context="アプリのJSONデータ取得"
+    )
 
 # グループ操作
 def manage_groups(config, logger, action, params=None):
@@ -541,96 +450,109 @@ def find_existing_directory(base_dir, app_id):
 
 # ACLをExcelに変換
 def generate_acl_excel(config, logger, app_id=None):
-    def output_file_formatter(app_id):
-        return f"{app_id}_acl_report.xlsx"
+    """
+    ACL情報をExcelに変換
+    """
+    def get_output_file(app_id, api_token):
+        output_file = OUTPUT_DIR / f"{app_id}_acl_report.xlsx"
+        return ["--output", str(output_file)]
 
-    return generate_user_group_excel_pickle_generic(
+    return run_app_script(
         config=config,
         logger=logger,
         script_filename="aclJson_to_excel.py",
-        output_file_formatter=output_file_formatter,
-        title="ACL情報",
-        context="ACL情報のExcel変換",
-        app_id=app_id
+        app_id=app_id,
+        extra_args_func=get_output_file,
+        context="ACL情報のExcel変換"
     )
-
 
 # 通知設定をExcelに出力
 def generate_notifications_excel(config, logger, app_id=None):
-    def output_file_formatter(app_id):
-        return f"{app_id}_notifications.xlsx"
+    """
+    通知設定をExcelに出力
+    """
+    def get_output_file(app_id, api_token):
+        output_file = OUTPUT_DIR / f"{app_id}_notifications.xlsx"
+        return ["--output", str(output_file)]
 
-    return generate_user_group_excel_pickle_generic(
+    return run_app_script(
         config=config,
         logger=logger,
         script_filename="notifications_to_excel.py",
-        output_file_formatter=output_file_formatter,
-        title="通知設定",
-        context="通知設定のExcel変換",
-        app_id=app_id
+        app_id=app_id,
+        extra_args_func=get_output_file,
+        context="通知設定のExcel変換"
     )
 
-
-def generate_user_group_excel_pickle_generic(config, logger, script_filename, output_file_formatter, title, context, app_id=None):
+def run_app_script(config, logger, script_filename, app_id=None, extra_args_func=None, context=""):
     """
-    共通のExcel変換処理
-
+    アプリごとに外部スクリプトを実行する共通処理
+    
     Args:
         config (dict): 設定情報
         logger (Logger): ロガーオブジェクト
         script_filename (str): 実行するスクリプトのファイル名
-        output_file_formatter (callable): app_id を受け取り出力ファイル名（Pathオブジェクトとする）の生成関数
-        title (str): ログ等で使用するタイトル（例："ACL情報" や "通知設定"）
-        context (str): エラー時の文脈情報（app_idごとの詳細なエラーメッセージに使用）
-        app_id (int or None, optional): 特定のアプリIDが指定されている場合、その1件のみ処理します。
-
+        app_id (int or None): 特定のアプリIDが指定されていればその1件のみ、Noneなら全アプリを対象
+        extra_args_func (callable): app_id, api_token を受け取り、追加のコマンドライン引数（list）を返す関数
+        context (str): ログ・エラーメッセージ用の処理内容の説明
+    
     Returns:
-        str or list of str or bool: 生成されたExcelファイルのパス（または複数ある場合はリスト）、もしくは失敗時にFalse
+        bool or list: 単一の場合は True/False、複数の場合は成功したアプリIDのリストなどを返す（要件に合わせて調整）
     """
-    logger.info(f"{title}のExcel変換を開始します")
-
+    logger.info(f"{context}の処理を開始します")
+    
     script_path = APPJSON_DIR / script_filename
     if not script_path.exists():
         logger.error(f"スクリプトファイルが見つかりません: {script_path}")
         return False
-
-    # app_tokensからアプリIDとAPIトークンを取得
+    
+    # 出力ディレクトリが存在しない場合は作成
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    
     app_tokens = config.get('app_tokens', {})
-    logger.info(f"app_tokens: {app_tokens}")
-
-    def process_single_app(app_id):
-        """
-        単一アプリに対するExcel変換処理
-        """
-        # 文字列キーと整数キーの両方をチェック
-        app_id_str = str(app_id)
-        app_id_int = int(app_id)
-        if app_id_str not in app_tokens and app_id_int not in app_tokens:
-            logger.error(f"アプリID {app_id} のAPIトークンが設定されていません")
-            return False
-
-        # [app_id]_ で始まるディレクトリを探す
-        output_dir = find_existing_directory(OUTPUT_DIR, str(app_id))
-        if not output_dir:
-            logger.error(f"アプリID {app_id} に対応するディレクトリが見つかりません")
-            return False
-
-        output_file = output_dir / output_file_formatter(app_id)
-
+    
+    def process_single_app(app_id, api_token):
+        # 基本引数
         cmd = [
             sys.executable,
             str(script_path),
-            str(app_id),
-            "--output", str(output_file)
+            str(app_id)
         ]
-
+        
+        # スクリプトごとの引数の違いに対応
+        if script_filename == "aclJson_to_excel.py":
+            # ACLレポート用の引数
+            output_file = OUTPUT_DIR / f"{app_id}_acl_report.xlsx"
+            cmd.extend(["--output", str(output_file)])
+        elif script_filename == "notifications_to_excel.py":
+            # 通知設定用の引数
+            output_file = OUTPUT_DIR / f"{app_id}_notifications.xlsx"
+            cmd.extend(["--output", str(output_file)])
+        elif script_filename == "download2yaml_excel.py":
+            # アプリ設定用の引数
+            output_dir = OUTPUT_DIR / f"{app_id}_app_settings"
+            output_dir.mkdir(exist_ok=True)
+            cmd.extend(["--output-dir", str(output_dir)])
+        
+        # 追加引数の付与（必要に応じて）
+        if extra_args_func is not None:
+            cmd.extend(extra_args_func(app_id, api_token))
+        
         try:
-            logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            print(result.stdout)  # デバッグ用
-            logger.info(f"アプリID {app_id} の{title}を {output_file} に出力しました")
+            # 環境変数に認証情報を設定
+            env = os.environ.copy()
+            env["KINTONE_SUBDOMAIN"] = config["subdomain"]
+            env["KINTONE_USERNAME"] = config["username"]
+            env["KINTONE_PASSWORD"] = config["password"]
+            if api_token:
+                env["KINTONE_API_TOKEN"] = api_token
+            
+            logger.info(f"実行コマンド: python {script_path} {app_id} ****** ...")
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
+            print(result.stdout)
+            logger.info(f"アプリID {app_id} の{context}を実行しました")
             logger.debug(f"出力: {result.stdout}")
-            return str(output_file)
+            return True
         except subprocess.CalledProcessError as e:
             logger.error(f"アプリID {app_id} の{context}中にエラーが発生しました: {e}")
             logger.error(f"標準出力: {e.stdout}")
@@ -645,22 +567,26 @@ def generate_user_group_excel_pickle_generic(config, logger, script_filename, ou
             )
             return False
 
+    # 特定のアプリIDの場合
     if app_id:
-        return process_single_app(app_id)
-    else:
-        success = True
-        generated_files = []
-        for app_key in app_tokens.keys():
-            ret = process_single_app(app_key)
-            if ret:
-                generated_files.append(ret)
-            else:
-                success = False
-
-        if generated_files:
-            return generated_files
+        app_id_str = str(app_id)
+        app_id_int = int(app_id)
+        if app_id_str in app_tokens:
+            token = app_tokens[app_id_str]
+        elif app_id_int in app_tokens:
+            token = app_tokens[app_id_int]
         else:
+            logger.error(f"アプリID {app_id} のAPIトークンが設定されていません")
             return False
+        return process_single_app(app_id, token)
+    else:
+        # 全アプリの処理
+        successes = []
+        for app_key, token in app_tokens.items():
+            if process_single_app(app_key, token):
+                successes.append(app_key)
+        return successes if successes else False
+
 
 # ディレクトリ操作関数
 def prepare_directories():
