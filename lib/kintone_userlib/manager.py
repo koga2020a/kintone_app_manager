@@ -44,6 +44,9 @@ class UserManager:
                 return group
         return None
 
+    def get_group_by_code(self, group_code: str) -> Optional[Group]:
+        return self.groups.get(group_code)
+
     def get_users_in_group(self, group_name: str) -> List[User]:
         group = self.get_group(group_name)
         return group.get_sorted_members(self.primary_domain) if group else []

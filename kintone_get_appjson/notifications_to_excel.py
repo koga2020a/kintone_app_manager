@@ -25,6 +25,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.append(str(SCRIPT_DIR.parent / "lib"))
 from kintone_userlib import user_manager, get_priority_domain
 
+# pickleファイルからユーザー・グループ情報を読み込む
+pickle_path = SCRIPT_DIR.parent / "output" / "kintone_users_groups.pickle"
+if pickle_path.exists():
+    user_manager = user_manager.from_pickle(str(pickle_path))
+
 # 定数定義
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR.parent / "output"
@@ -669,10 +674,10 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
         
         def get_entity_name(type_jp, code):
             if type_jp == "グループ":
-                group = user_manager.get_group(code)
+                group = user_manager.groups.get(code)  # NG?
                 return group.name if group else code
             elif type_jp == "ユーザー":
-                user = user_manager.get_user(code)
+                user = user_manager.get_user(code)  # NG?
                 return user.username if user else code
             return code
             
@@ -762,7 +767,7 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
     ws = wb.create_sheet(title="レコード通知設定")
     
     # ヘッダー設定
-    headers = ["No.", "通知タイトル", "通知条件", "通知先種別", "通知先", "フィールドタイプ", "下位組織継承"]
+    headers = ["No.", "通知タイトル", "通知条件", "通知先種別", "フィールドタイプ", "通知先", "自分宛の通知", "すべての通知", "実行したユーザには通知されない", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = header_font
@@ -775,9 +780,17 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
     ws.column_dimensions['B'].width = 47
     ws.column_dimensions['C'].width = 47
     ws.column_dimensions['D'].width = 15
-    ws.column_dimensions['E'].width = 30
-    ws.column_dimensions['F'].width = 15
+    ws.column_dimensions['E'].width = 15
+    ws.column_dimensions['F'].width = 20
     ws.column_dimensions['G'].width = 15
+    ws.column_dimensions['H'].width = 15
+    ws.column_dimensions['I'].width = 15
+    ws.column_dimensions['J'].width = 15
+    ws.column_dimensions['K'].width = 15
+    ws.column_dimensions['L'].width = 15
+    ws.column_dimensions['M'].width = 15
+    ws.column_dimensions['N'].width = 15
+    ws.column_dimensions['O'].width = 15
     
     # データの書き込み
     row = 2
@@ -828,9 +841,17 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
                 (row, 2, title if target_idx == 0 else None),
                 (row, 3, condition if target_idx == 0 else None),
                 (row, 4, type_jp),
-                (row, 5, entity_code),
-                (row, 6, field_type),
-                (row, 7, "継承する" if include_subs else "継承しない")
+                (row, 5, field_type),
+                (row, 6, entity_code),
+                (row, 7, "" if type_jp == "フィールド" else "●"),
+                (row, 8, "●" if type_jp == "フィールド" else ""),
+                (row, 9, "●"),
+                (row, 10, "●" if include_subs else ""),
+                (row, 11, "●" if notification.get("recordAdded", False) else ""),
+                (row, 12, "●" if notification.get("recordEdited", False) else ""),
+                (row, 13, "●" if notification.get("commentAdded", False) else ""),
+                (row, 14, "●" if notification.get("statusChanged", False) else ""),
+                (row, 15, "●" if notification.get("fileImported", False) else "")
             ]
             
             for r, c, value in cells:
