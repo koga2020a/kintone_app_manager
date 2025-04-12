@@ -1159,8 +1159,8 @@ def parse_args():
     parser.add_argument('--log-level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], default='INFO', help='ログレベル（デフォルト: INFO）')
     
     args = parser.parse_args()
-    print("パース後の引数情報:", vars(args))
-    print("================================")
+    """ print("パース後の引数情報:", vars(args))
+    print("================================") """
     return args
 
 def main():

@@ -519,20 +519,23 @@ def run_app_script(config, logger, script_filename, app_id=None, extra_args_func
             str(app_id)
         ]
         
+        # 出力ファイル/ディレクトリのパスを保持
+        output_path = None
+        
         # スクリプトごとの引数の違いに対応
         if script_filename == "aclJson_to_excel.py":
             # ACLレポート用の引数
-            output_file = OUTPUT_DIR / f"{app_id}_acl_report.xlsx"
-            cmd.extend(["--output", str(output_file)])
+            output_path = OUTPUT_DIR / f"{app_id}_acl_report.xlsx"
+            cmd.extend(["--output", str(output_path)])
         elif script_filename == "notifications_to_excel.py":
             # 通知設定用の引数
-            output_file = OUTPUT_DIR / f"{app_id}_notifications.xlsx"
-            cmd.extend(["--output", str(output_file)])
+            output_path = OUTPUT_DIR / f"{app_id}_notifications.xlsx"
+            cmd.extend(["--output", str(output_path)])
         elif script_filename == "download2yaml_excel.py":
             # アプリ設定用の引数
-            output_dir = OUTPUT_DIR / f"{app_id}_app_settings"
-            output_dir.mkdir(exist_ok=True)
-            cmd.extend(["--output-dir", str(output_dir)])
+            output_path = OUTPUT_DIR / f"{app_id}_app_settings"
+            output_path.mkdir(exist_ok=True)
+            cmd.extend(["--output-dir", str(output_path)])
         
         # 追加引数の付与（必要に応じて）
         if extra_args_func is not None:
@@ -552,7 +555,7 @@ def run_app_script(config, logger, script_filename, app_id=None, extra_args_func
             print(result.stdout)
             logger.info(f"アプリID {app_id} の{context}を実行しました")
             logger.debug(f"出力: {result.stdout}")
-            return True
+            return str(output_path)  # ファイル名/ディレクトリ名を返す
         except subprocess.CalledProcessError as e:
             logger.error(f"アプリID {app_id} の{context}中にエラーが発生しました: {e}")
             logger.error(f"標準出力: {e.stdout}")
@@ -581,11 +584,12 @@ def run_app_script(config, logger, script_filename, app_id=None, extra_args_func
         return process_single_app(app_id, token)
     else:
         # 全アプリの処理
-        successes = []
+        results = {}
         for app_key, token in app_tokens.items():
-            if process_single_app(app_key, token):
-                successes.append(app_key)
-        return successes if successes else False
+            result = process_single_app(app_key, token)
+            if result:  # resultがFalseでない場合（ファイル名/ディレクトリ名が返された場合）
+                results[app_key] = result
+        return results if results else False
 
 
 # ディレクトリ操作関数
@@ -882,39 +886,53 @@ def main():
     # ディレクトリの準備（allコマンドの場合のみ実行）
     if args.command == 'all':
         logger.info("ディレクトリの準備を開始します")
+        
+        def handle_directory_error(e):
+            """ディレクトリ準備時のエラーハンドリングを行う関数内関数"""
+            logger.error(f"ディレクトリの準備中にエラーが発生しました: {e}")
+            # Excelファイルが開かれているかどうかを確認
+            if "~$" in str(e) or any(temp_file.startswith("~$") for temp_file in str(e).split() if temp_file.startswith("~$")):
+                logger.error("Excelファイルが開かれているため処理を終了します。")
+                print(f"エラー: Excelファイルが開かれているため処理を続行できません。")
+                print("Excelファイルを閉じてから再実行してください。")
+                return True  # sys.exit(1)が必要
+            else:
+                # Excel以外のエラーの場合は警告を表示して続行
+                logger.warning("エラーが発生しましたが、処理を続行します。一部のファイルが正しく処理されない可能性があります。")
+                print(f"警告: ディレクトリの準備中にエラーが発生しました: {e}")
+                print("処理を続行しますが、一部のファイルが正しく処理されない可能性があります。")
+                return False  # 処理を続行
+        
         try:
             prepare_directories()
         except Exception as e:
-            logger.error(f"ディレクトリの準備中にエラーが発生しました: {e}")
-            # Excelファイルが開かれているかどうかを確認
-            if "~$" in str(e) or any(temp_file.startswith("~$") for temp_file in str(e).split() if temp_file.startswith("~$")):
-                logger.error("Excelファイルが開かれているため処理を終了します。")
-                print(f"エラー: Excelファイルが開かれているため処理を続行できません。")
-                print("Excelファイルを閉じてから再実行してください。")
+            if handle_directory_error(e):
                 sys.exit(1)
-            else:
-                # Excel以外のエラーの場合は警告を表示して続行
-                logger.warning("エラーが発生しましたが、処理を続行します。一部のファイルが正しく処理されない可能性があります。")
-                print(f"警告: ディレクトリの準備中にエラーが発生しました: {e}")
-                print("処理を続行しますが、一部のファイルが正しく処理されない可能性があります。")
     # appコマンドの場合、特定のアプリIDのディレクトリのみ準備
     elif args.command == 'app' and args.id:
         logger.info(f"アプリID {args.id} のディレクトリ準備を開始します")
-        try:
-            prepare_app_directories(args.id)
-        except Exception as e:
+        
+        def handle_app_directory_error(e):
+            """アプリディレクトリ準備時のエラーハンドリングを行う関数内関数"""
             logger.error(f"ディレクトリの準備中にエラーが発生しました: {e}")
             # Excelファイルが開かれているかどうかを確認
             if "~$" in str(e) or any(temp_file.startswith("~$") for temp_file in str(e).split() if temp_file.startswith("~$")):
                 logger.error("Excelファイルが開かれているため処理を終了します。")
                 print(f"エラー: Excelファイルが開かれているため処理を続行できません。")
                 print("Excelファイルを閉じてから再実行してください。")
-                sys.exit(1)
+                return True  # sys.exit(1)が必要
             else:
                 # Excel以外のエラーの場合は警告を表示して続行
                 logger.warning("エラーが発生しましたが、処理を続行します。一部のファイルが正しく処理されない可能性があります。")
                 print(f"警告: ディレクトリの準備中にエラーが発生しました: {e}")
                 print("処理を続行しますが、一部のファイルが正しく処理されない可能性があります。")
+                return False  # 処理を続行
+        
+        try:
+            prepare_app_directories(args.id)
+        except Exception as e:
+            if handle_app_directory_error(e):
+                sys.exit(1)
     
     # 最低限のディレクトリ作成を確保
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -940,12 +958,12 @@ def main():
     # コマンドに応じて処理を実行
     if args.command == 'users':
         # 両方の方法でユーザー情報を取得
-        results = []
+        results = {}
         
         # 従来の方法で取得
         subprocess_result = get_user_group_info(config, logger, args.format)
         if subprocess_result:
-            results.append(subprocess_result)
+            results['subprocess'] = subprocess_result
             print(f"従来の方法でユーザーとグループ情報を {subprocess_result} に出力しました")
         else:
             print("従来の方法でのユーザー情報取得に失敗しました")
@@ -954,7 +972,7 @@ def main():
         if KINTONE_USERLIB_AVAILABLE:
             direct_result = get_user_group_info_direct(config, logger, args.format)
             if direct_result:
-                results.append(direct_result)
+                results['direct'] = direct_result
                 print(f"直接API呼び出しでユーザーとグループ情報を {direct_result} に出力しました")
             else:
                 print("直接API呼び出しでのユーザー情報取得に失敗しました")
@@ -968,8 +986,8 @@ def main():
             sys.exit(1)
             
     elif args.command == 'app':
-        result = get_app_json(config, logger, args.id)
-        if result:
+        results = get_app_json(config, logger, args.id)
+        if results:
             print("アプリのJSONデータ取得が完了しました")
             
             # appコマンドで特定のアプリIDが指定された場合、事後処理も実行
@@ -983,14 +1001,14 @@ def main():
                 remove_datetime_suffix(OUTPUT_DIR)
             
     elif args.command == 'acl':
-        result = generate_acl_excel(config, logger, args.id)
-        if result:
-            if isinstance(result, list):
+        results = generate_acl_excel(config, logger, args.id)
+        if results:
+            if isinstance(results, dict):
                 print("以下のファイルにACL情報を出力しました:")
-                for file in result:
-                    print(f"- {file}")
+                for method, file in results.items():
+                    print(f"- {method}: {file}")
             else:
-                print(f"ACL情報を {result} に出力しました")
+                print(f"ACL情報を {results} に出力しました")
             
     elif args.command == 'summary':
         # アプリ設定一覧表の生成
@@ -1006,13 +1024,8 @@ def main():
         if args.output:
             cmd.extend(["--output", args.output])
         
-        try:
-            logger.info(f"実行コマンド: {' '.join(cmd)}")
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            print(result.stdout) # デバッグ用
-            logger.info("アプリ設定一覧表の生成が完了しました")
-            print(result.stdout)
-        except subprocess.CalledProcessError as e:
+        def handle_summary_error(e):
+            """アプリ設定一覧表生成時のエラーハンドリングを行う関数内関数"""
             logger.error(f"アプリ設定一覧表の生成中にエラーが発生しました: {e}")
             logger.error(f"標準出力: {e.stdout}")
             logger.error(f"標準エラー: {e.stderr}")
@@ -1025,7 +1038,17 @@ def main():
                 context="アプリ設定一覧表の生成"
             )
             print(f"エラー: アプリ設定一覧表の生成中にエラーが発生しました: {e}")
-            sys.exit(1)
+            return True  # sys.exit(1)が必要
+        
+        try:
+            logger.info(f"実行コマンド: {' '.join(cmd)}")
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print(result.stdout) # デバッグ用
+            logger.info("アプリ設定一覧表の生成が完了しました")
+            print(result.stdout)
+        except subprocess.CalledProcessError as e:
+            if handle_summary_error(e):
+                sys.exit(1)
             
     elif args.command == 'group':
         if args.action == 'list':
@@ -1049,26 +1072,26 @@ def main():
                 print(f"ユーザー {args.user} をグループから削除しました")
                 
     elif args.command == 'notifications':
-        result = generate_notifications_excel(config, logger, args.id)
-        if result:
-            if isinstance(result, list):
+        results = generate_notifications_excel(config, logger, args.id)
+        if results:
+            if isinstance(results, dict):
                 print("以下のファイルに通知設定を出力しました:")
-                for file in result:
-                    print(f"- {file}")
+                for method, file in results.items():
+                    print(f"- {method}: {file}")
             else:
-                print(f"通知設定を {result} に出力しました")
+                print(f"通知設定を {results} に出力しました")
             
     elif args.command == 'all':
         # すべての機能を順番に実行
         logger.info("すべての機能を順番に実行します")
         
         # 1. ユーザーとグループ情報の取得
-        user_group_files = []
+        user_group_results = {}
         
         # 従来の方法で取得
         subprocess_result = get_user_group_info(config, logger)
         if subprocess_result:
-            user_group_files.append(subprocess_result)
+            user_group_results['subprocess'] = subprocess_result
             print(f"従来の方法でユーザーとグループ情報を {subprocess_result} に出力しました")
         else:
             logger.warning("従来の方法でのユーザー情報取得に失敗しました")
@@ -1077,31 +1100,31 @@ def main():
         if KINTONE_USERLIB_AVAILABLE:
             direct_result = get_user_group_info_direct(config, logger)
             if direct_result:
-                user_group_files.append(direct_result)
+                user_group_results['direct'] = direct_result
                 print(f"直接API呼び出しでユーザーとグループ情報を {direct_result} に出力しました")
             else:
                 logger.warning("直接API呼び出しでのユーザー情報取得に失敗しました")
         else:
             logger.warning("kintone_userlibモジュールがインストールされていないため、直接API呼び出し方法は実行できませんでした")
             
-        if not user_group_files:
+        if not user_group_results:
             logger.error("すべての方法でユーザー情報取得に失敗しました")
             print("エラー: ユーザー情報の取得に失敗しました")
         
         # 2. アプリのJSONデータ取得
-        app_json_result = get_app_json(config, logger)
-        if app_json_result:
+        app_json_results = get_app_json(config, logger)
+        if app_json_results:
             print("アプリのJSONデータ取得が完了しました")
         
         # 3. ACL情報のExcel変換
-        acl_excel_result = generate_acl_excel(config, logger)
-        if acl_excel_result:
-            if isinstance(acl_excel_result, list):
+        acl_excel_results = generate_acl_excel(config, logger)
+        if acl_excel_results:
+            if isinstance(acl_excel_results, dict):
                 print("以下のファイルにACL情報を出力しました:")
-                for file in acl_excel_result:
-                    print(f"- {file}")
+                for method, file in acl_excel_results.items():
+                    print(f"- {method}: {file}")
             else:
-                print(f"ACL情報を {acl_excel_result} に出力しました")
+                print(f"ACL情報を {acl_excel_results} に出力しました")
         
         # 4. アプリ設定一覧表の生成
         logger.info("アプリ設定一覧表の生成を開始します")
@@ -1121,24 +1144,24 @@ def main():
             logger.warning(f"スクリプトファイル {script_path} が見つからないため、アプリ設定一覧表の生成をスキップします")
         
         # 5. 通知設定のExcel変換
-        notifications_result = generate_notifications_excel(config, logger)
-        if notifications_result:
-            if isinstance(notifications_result, list):
+        notifications_results = generate_notifications_excel(config, logger)
+        if notifications_results:
+            if isinstance(notifications_results, dict):
                 print("以下のファイルに通知設定を出力しました:")
-                for file in notifications_result:
-                    print(f"- {file}")
+                for method, file in notifications_results.items():
+                    print(f"- {method}: {file}")
             else:
-                print(f"通知設定を {notifications_result} に出力しました")
+                print(f"通知設定を {notifications_results} に出力しました")
         
         # 6. 通知設定のExcel変換
-        notifications_result = generate_notifications_excel(config, logger)
-        if notifications_result:
-            if isinstance(notifications_result, list):
+        notifications_results = generate_notifications_excel(config, logger)
+        if notifications_results:
+            if isinstance(notifications_results, dict):
                 print("以下のファイルに通知設定を出力しました:")
-                for file in notifications_result:
-                    print(f"- {file}")
+                for method, file in notifications_results.items():
+                    print(f"- {method}: {file}")
             else:
-                print(f"通知設定を {notifications_result} に出力しました")
+                print(f"通知設定を {notifications_results} に出力しました")
     
     # allコマンドの場合のみバックアップと日時部分の除去を実行
     if args.command == 'all':

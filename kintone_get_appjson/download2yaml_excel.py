@@ -1241,7 +1241,7 @@ class KintoneApp:
         try:
             with open(json_file, "w", encoding="utf-8") as f_json:
                 json.dump(all_records, f_json, ensure_ascii=False, indent=4)
-            print(f"全レコードをJSON形式で {json_file} にエクスポートしました。")
+            print(f"全レコードをJSON形式で  {json_file} にエクスポートしました。")
         except IOError as e:
             print(f"JSONファイルの保存中にエラーが発生しました: {e}")
             sys.exit(1)
@@ -1266,7 +1266,7 @@ class KintoneApp:
                 for record in flattened_records:
                     row = {field: remove_img_tag(str(record.get(field, ""))) if '<img src=data:image/png' in str(record.get(field, "")) else str(record.get(field, "")) for field in new_field_order}
                     writer.writerow(row)
-            print(f"全レコードをTSV形式で {tsv_file} にエクスポートしました。")
+            print(f"全レコードをTSV形式で   {tsv_file} にエクスポートしました。")
             self._export_records_excel(tsv_file)
         except IOError as e:
             print(f"ファイルの保存中にエラーが発生しました: {e}")
@@ -1327,8 +1327,8 @@ def parse_args():
     parser.add_argument('--silent', action='store_true', help='サイレントモード（ログ出力を抑制）')
     
     args = parser.parse_args()
-    print("パース後の引数情報:", vars(args))
-    print("================================")
+    """ print("パース後の引数情報:", vars(args))
+    print("================================") """
     return args
 
 if __name__ == "__main__":
