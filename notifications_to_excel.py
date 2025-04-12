@@ -1,5 +1,6 @@
 import json
 from typing import List
+import sys
 
 def parse_dict_string(value_str):
     """
@@ -189,6 +190,36 @@ def add_field_values_reference(self, ws: Worksheet, row_idx: int,
         row_idx = current_row + 1
     
     return row_idx
+
+def run_notifications_to_excel(app_id: str = None, output_file: str = None) -> bool:
+    """
+    notifications_to_excel.pyのメイン処理を実行する関数
+    
+    Args:
+        app_id (str, optional): アプリID
+        output_file (str, optional): 出力するExcelファイルの名前
+        
+    Returns:
+        bool: 処理が成功したかどうか
+    """
+    try:
+        # 引数を設定
+        sys.argv = ['notifications_to_excel.py']
+        if app_id:
+            sys.argv.extend(['--id', app_id])
+        if output_file:
+            sys.argv.extend(['--output', output_file])
+            
+        # main関数を実行
+        main()
+        return True
+    except Exception as e:
+        print(f"エラーが発生しました: {e}")
+        return False
+
+def main():
+    """メイン関数"""
+    # ... existing code ...
 
 # 以下の部分を書き換える
 # ... existing code ...

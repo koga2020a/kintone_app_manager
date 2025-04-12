@@ -236,7 +236,98 @@ def log_error_to_file(logger, error, command=None, stdout=None, stderr=None, con
     except Exception as e:
         logger.error(f"エラー情報の記録中にエラーが発生しました: {e}")
 
-# ユーザーとグループ情報の取得
+def run_subprocess_command(cmd, logger, context=""):
+    """
+    subprocess.runの呼び出しを一元管理する関数
+    
+    Args:
+        cmd (list): 実行するコマンド
+        logger (Logger): ロガーオブジェクト
+        context (str): 実行コンテキストの説明
+        
+    Returns:
+        subprocess.CompletedProcess: 実行結果
+    """
+    try:
+        # コマンドの最初の要素（スクリプト名）を取得
+        script_name = cmd[1] if len(cmd) > 1 else ""
+        
+        # スクリプト名に応じて適切な関数を呼び出す
+        if "get_user_group.py" in script_name:
+            # 引数を解析
+            subdomain = cmd[cmd.index("--subdomain") + 1] if "--subdomain" in cmd else None
+            username = cmd[cmd.index("--username") + 1] if "--username" in cmd else None
+            password = cmd[cmd.index("--password") + 1] if "--password" in cmd else None
+            output = cmd[cmd.index("--output") + 1] if "--output" in cmd else None
+            silent = "--silent" in cmd
+            
+            if not all([subdomain, username, password, output]):
+                raise ValueError("必要な引数が不足しています")
+                
+            # 関数を直接呼び出し
+            from kintone_get_user_group.get_user_group import run_get_user_group
+            success = run_get_user_group(subdomain, username, password, output, silent)
+            if not success:
+                raise subprocess.CalledProcessError(1, cmd, "", "関数の実行に失敗しました")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+            
+        elif "app_settings_summary.py" in script_name:
+            # 引数を解析
+            output = cmd[cmd.index("--output") + 1] if "--output" in cmd else None
+            
+            # 関数を直接呼び出し
+            from app_settings_summary import run_app_settings_summary
+            success = run_app_settings_summary(output)
+            if not success:
+                raise subprocess.CalledProcessError(1, cmd, "", "関数の実行に失敗しました")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+            
+        elif "notifications_to_excel.py" in script_name:
+            # 引数を解析
+            app_id = cmd[cmd.index("--id") + 1] if "--id" in cmd else None
+            output = cmd[cmd.index("--output") + 1] if "--output" in cmd else None
+            
+            # 関数を直接呼び出し
+            from notifications_to_excel import run_notifications_to_excel
+            success = run_notifications_to_excel(app_id, output)
+            if not success:
+                raise subprocess.CalledProcessError(1, cmd, "", "関数の実行に失敗しました")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+            
+        elif "download2yaml_excel.py" in script_name:
+            # 引数を解析
+            app_id = cmd[cmd.index("--id") + 1] if "--id" in cmd else None
+            output_dir = cmd[cmd.index("--output-dir") + 1] if "--output-dir" in cmd else None
+            
+            # 関数を直接呼び出し
+            from download2yaml_excel import run_download2yaml_excel
+            success = run_download2yaml_excel(app_id, output_dir)
+            if not success:
+                raise subprocess.CalledProcessError(1, cmd, "", "関数の実行に失敗しました")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+            
+        else:
+            # その他のスクリプトは従来通りsubprocess.runを使用
+            logger.info(f"実行コマンド: {' '.join(cmd)}")
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            logger.info(f"{context}が完了しました")
+            logger.debug(f"出力: {result.stdout}")
+            return result
+            
+    except subprocess.CalledProcessError as e:
+        logger.error(f"{context}中にエラーが発生しました: {e}")
+        logger.error(f"標準出力: {e.stdout}")
+        logger.error(f"標準エラー: {e.stderr}")
+        log_error_to_file(
+            logger, 
+            e, 
+            command=cmd, 
+            stdout=e.stdout, 
+            stderr=e.stderr, 
+            context=context
+        )
+        raise
+
 def get_user_group_info(config, logger, output_format="excel"):
     """
     kintone_get_user_group の機能を呼び出してユーザーとグループ情報を取得
@@ -265,24 +356,11 @@ def get_user_group_info(config, logger, output_format="excel"):
     ]
     
     try:
-        logger.info(f"実行コマンド: {' '.join(cmd).replace(config['password'], '********')}")
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print(result.stdout) # デバッグ用
+        result = run_subprocess_command(cmd, logger, "ユーザーとグループ情報の取得")
+        print(result.stdout)
         logger.info(f"ユーザーとグループ情報を {output_file} に出力しました")
-        logger.debug(f"出力: {result.stdout}")
         return str(output_file)
-    except subprocess.CalledProcessError as e:
-        logger.error(f"ユーザーとグループ情報の取得中にエラーが発生しました: {e}")
-        logger.error(f"標準出力: {e.stdout}")
-        logger.error(f"標準エラー: {e.stderr}")
-        log_error_to_file(
-            logger, 
-            e, 
-            command=cmd, 
-            stdout=e.stdout, 
-            stderr=e.stderr, 
-            context="ユーザーとグループ情報の取得"
-        )
+    except subprocess.CalledProcessError:
         return False
 
 def get_user_group_info_direct(config, logger, output_format="pickle"):
@@ -1008,31 +1086,11 @@ def main():
         if args.output:
             cmd.extend(["--output", args.output])
         
-        def handle_summary_error(e):
-            """アプリ設定一覧表生成時のエラーハンドリングを行う関数内関数"""
-            logger.error(f"アプリ設定一覧表の生成中にエラーが発生しました: {e}")
-            logger.error(f"標準出力: {e.stdout}")
-            logger.error(f"標準エラー: {e.stderr}")
-            log_error_to_file(
-                logger, 
-                e, 
-                command=cmd, 
-                stdout=e.stdout, 
-                stderr=e.stderr, 
-                context="アプリ設定一覧表の生成"
-            )
-            print(f"エラー: アプリ設定一覧表の生成中にエラーが発生しました: {e}")
-            return True  # sys.exit(1)が必要
-        
         try:
-            logger.info(f"実行コマンド: {' '.join(cmd)}")
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            print(result.stdout) # デバッグ用
-            logger.info("アプリ設定一覧表の生成が完了しました")
+            result = run_subprocess_command(cmd, logger, "アプリ設定一覧表の生成")
             print(result.stdout)
-        except subprocess.CalledProcessError as e:
-            if handle_summary_error(e):
-                sys.exit(1)
+        except subprocess.CalledProcessError:
+            sys.exit(1)
             
     elif args.command == 'group':
         if args.action == 'list':
@@ -1117,13 +1175,10 @@ def main():
         if script_path.exists():
             cmd = [sys.executable, str(script_path)]
             try:
-                logger.info(f"実行コマンド: {' '.join(cmd)}")
-                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-                print(result.stdout) # デバッグ用
-                logger.info("アプリ設定一覧表の生成が完了しました")
-            except subprocess.CalledProcessError as e:
-                logger.error(f"アプリ設定一覧表の生成中にエラーが発生しました: {e}")
-                logger.warning("処理を続行します")
+                result = run_subprocess_command(cmd, logger, "アプリ設定一覧表の生成")
+                print(result.stdout)
+            except subprocess.CalledProcessError:
+                sys.exit(1)
         else:
             logger.warning(f"スクリプトファイル {script_path} が見つからないため、アプリ設定一覧表の生成をスキップします")
         

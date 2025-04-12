@@ -873,63 +873,100 @@ def load_config(config_path: str) -> Dict[str, Any]:
     with open(config_path, 'r', encoding='utf-8') as file:
         return yaml.safe_load(file)
 
-def main():
-  args = ArgumentParser.parse_arguments()
-  logger = setup_logging(args.silent, False)
-
-  # auditディレクトリの作成（カレントディレクトリ直下）
-  os.makedirs('./audit', exist_ok=True)
-  
-  # 認証情報の初期化
-  subdomain = args.subdomain
-  username = args.username
-  password = args.password
-
-  # 引数が指定されていない場合、デフォルトのconfig_UserAccount.yamlを使用
-  if not (subdomain and username and password):
-    default_config = 'config_UserAccount.yaml'
+def run_get_user_group(subdomain: str, username: str, password: str, output_file: str, silent: bool = False) -> bool:
+    """
+    get_user_group.pyのメイン処理を実行する関数
+    
+    Args:
+        subdomain (str): Kintoneのサブドメイン
+        username (str): 管理者ユーザーのログイン名
+        password (str): 管理者ユーザーのパスワード
+        output_file (str): 出力するExcelファイルの名前
+        silent (bool): サイレントモードかどうか
+        
+    Returns:
+        bool: 処理が成功したかどうか
+    """
+    # ログ設定
+    logger = setup_logging(silent, False)
+    
     try:
-      config = load_config(default_config)
-      if not subdomain:
-        subdomain = config.get('subdomain')
-      if not username:
-        username = config.get('username')
-      if not password:
-        password = config.get('password')
-      logger.info(f"デフォルト設定ファイル '{default_config}' から認証情報を読み込みました。")
+        # 引数を設定
+        sys.argv = [
+            'get_user_group.py',
+            '--subdomain', subdomain,
+            '--username', username,
+            '--password', password,
+            '--output', output_file
+        ]
+        if silent:
+            sys.argv.append('--silent')
+            
+        # main関数を実行
+        main()
+        return True
     except Exception as e:
-      logger.error(f"デフォルト設定ファイルの読み込みに失敗しました: {e}")
-      sys.exit(1)
+        logger.error(f"エラーが発生しました: {e}")
+        return False
 
-  # Kintoneクライアントの初期化
-  logger.info("認証情報を設定中...")
-  client = KintoneClient(subdomain, username, password, logger)
+def main():
+    """メイン関数"""
+    args = ArgumentParser.parse_arguments()
+    logger = setup_logging(args.silent, False)
 
-  # データの取得
-  logger.info("全ユーザーを取得中...")
-  all_users = client.get_all_users()
+    # auditディレクトリの作成（カレントディレクトリ直下）
+    os.makedirs('./audit', exist_ok=True)
+    
+    # 認証情報の初期化
+    subdomain = args.subdomain
+    username = args.username
+    password = args.password
 
-  logger.info("全グループを取得中...")
-  all_groups = client.get_all_groups()
+    # 引数が指定されていない場合、デフォルトのconfig_UserAccount.yamlを使用
+    if not (subdomain and username and password):
+      default_config = 'config_UserAccount.yaml'
+      try:
+        config = load_config(default_config)
+        if not subdomain:
+          subdomain = config.get('subdomain')
+        if not username:
+          username = config.get('username')
+        if not password:
+          password = config.get('password')
+        logger.info(f"デフォルト設定ファイル '{default_config}' から認証情報を読み込みました。")
+      except Exception as e:
+        logger.error(f"デフォルト設定ファイルの読み込みに失敗しました: {e}")
+        sys.exit(1)
 
-  # データの処理
-  processor = DataProcessor(all_users, all_groups, client, logger)
-  processor.map_users()
-  filtered_groups = processor.filter_groups()
-  group_names = processor.organize_groups(filtered_groups)
-  processor.populate_group_memberships(filtered_groups)
-  dataframes = processor.generate_dataframes(group_names)
-  
-  # group_user_list.yamlの生成を追加
-  processor.export_group_user_list(filtered_groups)
+    # Kintoneクライアントの初期化
+    logger.info("認証情報を設定中...")
+    client = KintoneClient(subdomain, username, password, logger)
 
-  # Excelへのエクスポートとフォーマット
-  exporter = ExcelExporter(dataframes, group_names, args.output, logger)
-  exporter.prepare_group_data(client)
-  exporter.export_to_excel()
-  exporter.format_excel()
+    # データの取得
+    logger.info("全ユーザーを取得中...")
+    all_users = client.get_all_users()
 
-  logger.info(f"Excelファイル '{args.output}' の作成とフォーマット設定が完了しました。")
+    logger.info("全グループを取得中...")
+    all_groups = client.get_all_groups()
+
+    # データの処理
+    processor = DataProcessor(all_users, all_groups, client, logger)
+    processor.map_users()
+    filtered_groups = processor.filter_groups()
+    group_names = processor.organize_groups(filtered_groups)
+    processor.populate_group_memberships(filtered_groups)
+    dataframes = processor.generate_dataframes(group_names)
+    
+    # group_user_list.yamlの生成を追加
+    processor.export_group_user_list(filtered_groups)
+
+    # Excelへのエクスポートとフォーマット
+    exporter = ExcelExporter(dataframes, group_names, args.output, logger)
+    exporter.prepare_group_data(client)
+    exporter.export_to_excel()
+    exporter.format_excel()
+
+    logger.info(f"Excelファイル '{args.output}' の作成とフォーマット設定が完了しました。")
 
 if __name__ == "__main__":
   main()

@@ -360,6 +360,32 @@ def create_excel_summary(app_summaries, output_file=None):
     
     return str(output_file)
 
+def run_app_settings_summary(output_file: str = None) -> bool:
+    """
+    app_settings_summary.pyのメイン処理を実行する関数
+    
+    Args:
+        output_file (str, optional): 出力するExcelファイルの名前
+        
+    Returns:
+        bool: 処理が成功したかどうか
+    """
+    # ログ設定
+    logger = setup_logging()
+    
+    try:
+        # 引数を設定
+        sys.argv = ['app_settings_summary.py']
+        if output_file:
+            sys.argv.extend(['--output', output_file])
+            
+        # main関数を実行
+        main()
+        return True
+    except Exception as e:
+        logger.error(f"エラーが発生しました: {e}")
+        return False
+
 def main():
     """メイン関数"""
     # コマンドライン引数の解析
