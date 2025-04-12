@@ -19,6 +19,12 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 from dotenv import load_dotenv
 
+# スクリプトのディレクトリパスを取得
+SCRIPT_DIR = Path(__file__).resolve().parent
+# kintone_userlib モジュールのパスを追加
+sys.path.append(str(SCRIPT_DIR.parent / "lib"))
+from kintone_userlib import user_manager, get_priority_domain
+
 # 定数定義
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR.parent / "output"
@@ -215,6 +221,8 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
         
         # 見出し
         row_idx += 2
+        # A列とB列を結合
+        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
         cell = ws.cell(row=row_idx, column=1)
         cell.value = f"通知先種別：フィールド  フィールドタイプ：{'グループ選択（GROUP_SELECT）' if field_type == 'GROUP_SELECT' else 'ユーザー選択（USER_SELECT）'}"
         cell.font = Font(bold=True, size=12)
@@ -380,7 +388,8 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                             if cell_d.value == "停止中":
                                 gray_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
                                 for col in range(2, 5):  # B, C, D列
-                                    ws.cell(row=current_row, column=col).fill = gray_fill
+                                    cell = ws.cell(row=current_row, column=col)
+                                    cell.fill = gray_fill
                             
                             current_row += 1
                         
@@ -583,7 +592,7 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     field_fill = PatternFill(start_color="CCCCFF", end_color="CCCCFF", fill_type="solid")  # 薄い青
     
     # ヘッダー行 - フィールドタイプ列を追加
-    headers = ["No.", "通知先種別", "フィールドタイプ", "通知先", "フィールドタイプ", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
+    headers = ["No.", "通知先種別", "フィールドタイプ", "通知先", "自分宛の通知", "すべての通知", "実行したユーザには通知されない", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
     for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx)
         cell.value = header
@@ -658,13 +667,27 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
         else:
             type_jp = entity_type
         
+        def get_entity_name(type_jp, code):
+            if type_jp == "グループ":
+                group = user_manager.get_group(code)
+                return group.name if group else code
+            elif type_jp == "ユーザー":
+                user = user_manager.get_user(code)
+                return user.username if user else code
+            return code
+            
+        entity_code = get_entity_name(type_jp, entity_code)
+
+        
         # データを行に設定
         row_data = [
             row_idx - 1,  # No.
             type_jp,  # 通知先タイプ
-            field_type,  # フィールドタイプ - 新しい列
+            form_field_type,  # フォームフィールドから取得したフィールドタイプ - C列
             entity_code,  # 通知先
-            form_field_type,  # フォームフィールドから取得したフィールドタイプ - E列
+            "" if type_jp == "フィールド" else "●", # "自分宛の通知", 
+            "●" if type_jp == "フィールド" else "", # "すべての通知", 
+            "●", # "実行したユーザには通知されない"
             "●" if notify.get("includeSubs", False) else "",  # サブグループ含む
             "●" if notify.get("recordAdded", False) else "",  # レコード追加
             "●" if notify.get("recordEdited", False) else "",  # レコード編集
@@ -694,7 +717,7 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
             elif row_fill and col_idx != 2:  # B列以外
                 cell.fill = row_fill
                 
-            if col_idx >= 6:  # チェックボックス的な列は中央揃え
+            if col_idx >= 5:  # チェックボックス的な列は中央揃え
                 cell.alignment = Alignment(horizontal='center')
     
     # コメント通知設定
@@ -1008,6 +1031,8 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
     row_idx += 2
     group_header_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # グループ用の背景色（薄い緑）
     
+    # A列とB列を結合
+    ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
     ws.cell(row=row_idx, column=1).value = "通知先種別：グループ"
     ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
     ws.cell(row=row_idx, column=1).fill = group_header_fill
@@ -1176,6 +1201,8 @@ def add_user_information_table(ws, row_idx, user_codes, header_font, header_fill
     row_idx += 2
     user_header_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # ユーザー用の背景色（薄い赤）
     
+    # A列とB列を結合
+    ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
     ws.cell(row=row_idx, column=1).value = "通知先種別：ユーザー 情報"
     ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
     ws.cell(row=row_idx, column=1).fill = user_header_fill
