@@ -805,6 +805,7 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
     row = 2
     current_notification_id = None
     first_row_of_notification = None
+    notification_id_changes = 0  # 通知IDの変化をカウントする変数を追加
     
     # フィールドコードの収集
     field_codes = []
@@ -814,6 +815,8 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
         condition = notification.get('filterCond', '')
         
         # 現在の通知IDを設定
+        if current_notification_id != idx:
+            notification_id_changes += 1
         current_notification_id = idx
         first_row_of_notification = row
         
@@ -854,7 +857,7 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
                 (row, 6, entity_code),
                 (row, 7, "" if type_jp == "フィールド" else "●"),
                 (row, 8, "●" if type_jp == "フィールド" else ""),
-                (row, 9, "●"),
+                (row, 9, notification_id_changes % 2),
                 (row, 10, "●" if include_subs else ""),
             ]
 
@@ -873,6 +876,8 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
                         cell.fill = field_fill
                 if c >= 5:  # 5列目以降のセルを中央寄せに変更
                     cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                if c >= 5 and row % 2 == 0:
+                    cell.fill = light_blue_fill
 
             row += 1
         
@@ -889,10 +894,8 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
                 
                 # 結合したセルに交互の背景色を設定
                 merged_cell = ws.cell(row=first_row_of_notification, column=col)
-                if first_row_of_notification % 2 == 0:
+                if notification_id_changes % 2 == 0:
                     merged_cell.fill = light_blue_fill
-                else:
-                    merged_cell.fill = None
         
         # フィールドコードの収集
         for target in notification.get('targets', []):
