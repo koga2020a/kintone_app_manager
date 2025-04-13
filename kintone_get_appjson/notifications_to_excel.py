@@ -576,7 +576,14 @@ def create_notification_excel(app_id, general_data, record_data, reminder_data, 
     if reminder_data:
         create_reminder_notifications_sheet(wb, reminder_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
     
-    # Excelファイルを保存
+    # すべてのシートの利用されているセルにArialフォントを設定
+    for sheet in wb.sheetnames:
+        ws = wb[sheet]
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.value is not None:  # 値が設定されているセルのみ
+                    cell.font = Font(name='Arial', size=12 if cell.font and cell.font.size == 11 else (cell.font.size if cell.font else 11))
+    
     wb.save(output_file)
     logging.info(f"通知設定をExcelに出力しました: {output_file}")
     
