@@ -772,7 +772,12 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
 def create_record_notifications_sheet(wb, data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes, form_fields=None, app_dir=None):
     """レコード通知設定のシートを作成"""
     ws = wb.create_sheet(title="レコード通知設定")
-    
+
+    # 通知先種別ごとの背景色を定義
+    user_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # 薄い赤
+    group_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # 薄い緑
+    field_fill = PatternFill(start_color="CCCCFF", end_color="CCCCFF", fill_type="solid")  # 薄い青
+
     # ヘッダー設定
     headers = ["No.", "通知タイトル", "通知条件", "通知先種別", "フィールドタイプ", "通知先", "自分宛の通知", "すべての通知", "実行したユーザには通知されない", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
     for col, header in enumerate(headers, 1):
@@ -860,11 +865,20 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
                 (row, 14, "●" if notification.get("statusChanged", False) else ""),
                 (row, 15, "●" if notification.get("fileImported", False) else "")
             ]
-            
+
             for r, c, value in cells:
                 cell = ws.cell(row=r, column=c, value=value)
                 cell.border = thin_border
                 cell.alignment = Alignment(vertical='center', wrap_text=True)
+                
+                # D列（通知先タイプ）に応じて背景色を設定
+                if c == 4 and value:
+                    if value == "ユーザー":
+                        cell.fill = user_fill
+                    elif value == "グループ":
+                        cell.fill = group_fill
+                    elif value == "フィールド":
+                        cell.fill = field_fill
             
             row += 1
         
