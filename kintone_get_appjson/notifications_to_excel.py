@@ -777,9 +777,11 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
     user_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # 薄い赤
     group_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # 薄い緑
     field_fill = PatternFill(start_color="CCCCFF", end_color="CCCCFF", fill_type="solid")  # 薄い青
+    # データ行の背景色を交互に設定
+    light_blue_fill = PatternFill(start_color="EBF1F5", end_color="EBF1F5", fill_type="solid")
 
     # ヘッダー設定
-    headers = ["No.", "通知タイトル", "通知条件", "通知先種別", "フィールドタイプ", "通知先", "自分宛の通知", "すべての通知", "実行したユーザには通知されない", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
+    headers = ["No.", "通知タイトル", "通知条件", "通知先種別", "フィールドタイプ", "通知先", "自分宛の通知", "すべての通知", "実行したユーザには通知されない", "サブグループ含む"]
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = header_font
@@ -791,18 +793,13 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
     ws.column_dimensions['A'].width = 47
     ws.column_dimensions['B'].width = 47
     ws.column_dimensions['C'].width = 47
-    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['D'].width = 25
     ws.column_dimensions['E'].width = 15
     ws.column_dimensions['F'].width = 20
     ws.column_dimensions['G'].width = 15
     ws.column_dimensions['H'].width = 15
     ws.column_dimensions['I'].width = 15
     ws.column_dimensions['J'].width = 15
-    ws.column_dimensions['K'].width = 15
-    ws.column_dimensions['L'].width = 15
-    ws.column_dimensions['M'].width = 15
-    ws.column_dimensions['N'].width = 15
-    ws.column_dimensions['O'].width = 15
     
     # データの書き込み
     row = 2
@@ -859,11 +856,6 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
                 (row, 8, "●" if type_jp == "フィールド" else ""),
                 (row, 9, "●"),
                 (row, 10, "●" if include_subs else ""),
-                (row, 11, "●" if notification.get("recordAdded", False) else ""),
-                (row, 12, "●" if notification.get("recordEdited", False) else ""),
-                (row, 13, "●" if notification.get("commentAdded", False) else ""),
-                (row, 14, "●" if notification.get("statusChanged", False) else ""),
-                (row, 15, "●" if notification.get("fileImported", False) else "")
             ]
 
             for r, c, value in cells:
@@ -879,18 +871,28 @@ def create_record_notifications_sheet(wb, data, header_font, header_fill, header
                         cell.fill = group_fill
                     elif value == "フィールド":
                         cell.fill = field_fill
-            
+                if c >= 5:  # 5列目以降のセルを中央寄せに変更
+                    cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
             row += 1
         
         # 同じ通知IDの行が複数ある場合、A列、B列、C列を結合
         if row > first_row_of_notification + 1:
             for col in range(1, 4):  # A, B, C列
+                # セルの結合
                 ws.merge_cells(
                     start_row=first_row_of_notification,
                     start_column=col,
                     end_row=row - 1,
                     end_column=col
                 )
+                
+                # 結合したセルに交互の背景色を設定
+                merged_cell = ws.cell(row=first_row_of_notification, column=col)
+                if first_row_of_notification % 2 == 0:
+                    merged_cell.fill = light_blue_fill
+                else:
+                    merged_cell.fill = None
         
         # フィールドコードの収集
         for target in notification.get('targets', []):
