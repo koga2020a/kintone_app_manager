@@ -216,6 +216,7 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
         # 見出し
         row_idx += 2
         cell = ws.cell(row=row_idx, column=1)
+        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
         cell.value = f"通知先種別：フィールド  フィールドタイプ：{'グループ選択（GROUP_SELECT）' if field_type == 'GROUP_SELECT' else 'ユーザー選択（USER_SELECT）'}"
         cell.font = Font(bold=True, size=12)
         cell.fill = field_header_fill
@@ -531,7 +532,7 @@ def create_notification_excel(app_id, general_data, record_data, reminder_data, 
         wb.remove(wb["Sheet"])
     
     # スタイル定義
-    header_font = Font(bold=True, size=11)
+    header_font = Font(bold=True, size=11, name='Arial')
     header_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
     header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
     
@@ -562,6 +563,9 @@ def create_notification_excel(app_id, general_data, record_data, reminder_data, 
     if reminder_data:
         create_reminder_notifications_sheet(wb, reminder_data, header_font, header_fill, header_alignment, thin_border, group_yaml_data, collected_group_codes)
     
+    # 全シートの全セルのフォントをArialに設定
+    set_font_to_arial(wb)
+
     # Excelファイルを保存
     wb.save(output_file)
     logging.info(f"通知設定をExcelに出力しました: {output_file}")
@@ -583,7 +587,7 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     field_fill = PatternFill(start_color="CCCCFF", end_color="CCCCFF", fill_type="solid")  # 薄い青
     
     # ヘッダー行 - フィールドタイプ列を追加
-    headers = ["No.", "通知先種別", "フィールドタイプ", "通知先", "フィールドタイプ", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
+    headers = ["No.", "通知先種別", "通知先", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
     for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx)
         cell.value = header
@@ -661,10 +665,8 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
         # データを行に設定
         row_data = [
             row_idx - 1,  # No.
-            type_jp,  # 通知先タイプ
-            field_type,  # フィールドタイプ - 新しい列
-            entity_code,  # 通知先
-            form_field_type,  # フォームフィールドから取得したフィールドタイプ - E列
+            type_jp + ' (' + form_field_type + ')',  # 通知先タイプ
+            entity_code + ' (フィールド名)' if type_jp == 'フィールド' else entity_code,  # 通知先
             "●" if notify.get("includeSubs", False) else "",  # サブグループ含む
             "●" if notify.get("recordAdded", False) else "",  # レコード追加
             "●" if notify.get("recordEdited", False) else "",  # レコード編集
@@ -694,7 +696,7 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
             elif row_fill and col_idx != 2:  # B列以外
                 cell.fill = row_fill
                 
-            if col_idx >= 6:  # チェックボックス的な列は中央揃え
+            if col_idx >= 5:  # チェックボックス的な列は中央揃え
                 cell.alignment = Alignment(horizontal='center')
     
     # コメント通知設定
@@ -1240,6 +1242,27 @@ def add_user_information_table(ws, row_idx, user_codes, header_font, header_fill
         row_idx += 1
     
     return row_idx
+
+def set_font_to_arial(wb):
+    """全シートの全セルのフォントをArialに設定する"""
+    for sheet in wb.worksheets:
+        for row in sheet.rows:
+            for cell in row:
+                if cell.font:
+                    # 既存のフォント設定を保持しつつ、フォント名のみ変更
+                    new_font = Font(
+                        name='Arial',
+                        size=cell.font.size,
+                        bold=cell.font.bold,
+                        italic=cell.font.italic,
+                        underline=cell.font.underline,
+                        strike=cell.font.strike,
+                        color=cell.font.color
+                    )
+                    cell.font = new_font
+                else:
+                    # フォント設定がない場合は新規作成
+                    cell.font = Font(name='Arial')
 
 def main():
     """メイン関数"""
