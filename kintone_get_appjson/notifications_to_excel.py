@@ -376,7 +376,8 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                             cell_d = ws.cell(row=current_row, column=4)
                             cell_d.value = "停止中" if member.get('isDisabled', False) else ""
                             cell_d.border = thin_border
-                            
+                            cell_d.alignment = Alignment(horizontal='center', vertical='center')
+
                             # D列が「停止中」の場合、B, C, D列の背景色を淡いグレーに設定
                             if cell_d.value == "停止中":
                                 gray_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
@@ -448,7 +449,9 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                     cell_d = ws.cell(row=current_row, column=4)
                     cell_d.value = "停止中" if user_info.get('isDisabled', False) else ""
                     cell_d.border = thin_border
-                    
+                    cell_d.alignment = Alignment(horizontal='center', vertical='center')
+
+
                     # D列が「停止中」の場合、B, C, D列の背景色を淡いグレーに設定
                     if cell_d.value == "停止中":
                         gray_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
@@ -1066,6 +1069,7 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
             cell_d = ws.cell(row=row_idx, column=4)
             cell_d.value = "停止中" if user.get('isDisabled', False) else ""
             cell_d.border = thin_border
+            cell_d.alignment = Alignment(horizontal='center', vertical='center')
 
             # D列が「停止中」の場合、B, C, D列の背景色を淡いグレーに設定
             if cell_d.value == "停止中":
@@ -1188,7 +1192,7 @@ def add_user_information_table(ws, row_idx, user_codes, header_font, header_fill
     
     # ヘッダー行
     headers = ["アカウント名", "メールアドレス", "停止中"]
-    for col_idx, header in enumerate(headers, 1):
+    for col_idx, header in enumerate(headers, 2):
         cell = ws.cell(row=row_idx, column=col_idx)
         cell.value = header
         cell.font = header_font
@@ -1201,17 +1205,18 @@ def add_user_information_table(ws, row_idx, user_codes, header_font, header_fill
         # ユーザーが存在しない場合はコードのみ表示
         if user_code not in user_yaml_data:
             # A列: アカウント名（コードのみ）
-            cell_a = ws.cell(row=row_idx, column=1)
+            cell_a = ws.cell(row=row_idx, column=2)
             cell_a.value = user_code
             cell_a.border = thin_border
             
             # B列: メールアドレス（空欄）
-            cell_b = ws.cell(row=row_idx, column=2)
+            cell_b = ws.cell(row=row_idx, column=3)
             cell_b.border = thin_border
             
             # C列: 停止中（空欄）
-            cell_c = ws.cell(row=row_idx, column=3)
+            cell_c = ws.cell(row=row_idx, column=4)
             cell_c.border = thin_border
+            cell_c.alignment = Alignment(horizontal='center', vertical='center')
             
             row_idx += 1
             continue
@@ -1219,24 +1224,25 @@ def add_user_information_table(ws, row_idx, user_codes, header_font, header_fill
         user_info = user_yaml_data[user_code]
         
         # A列: アカウント名
-        cell_a = ws.cell(row=row_idx, column=1)
+        cell_a = ws.cell(row=row_idx, column=2)
         cell_a.value = user_info.get('username', user_code)
         cell_a.border = thin_border
         
         # B列: メールアドレス
-        cell_b = ws.cell(row=row_idx, column=2)
+        cell_b = ws.cell(row=row_idx, column=3)
         cell_b.value = user_info.get('email', '')
         cell_b.border = thin_border
         
         # C列: 停止中かどうか
-        cell_c = ws.cell(row=row_idx, column=3)
+        cell_c = ws.cell(row=row_idx, column=4)
         cell_c.value = "停止中" if user_info.get('isDisabled', False) else ""
         cell_c.border = thin_border
+        cell_c.alignment = Alignment(horizontal='center', vertical='center')
 
         # C列が「停止中」の場合、行全体の背景色を淡いグレーに設定
         if cell_c.value == "停止中":
             gray_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
-            for col in range(1, 4):  # A, B, C列
+            for col in range(1, 5):  # A, B, C列
                 ws.cell(row=row_idx, column=col).fill = gray_fill
         
         row_idx += 1
