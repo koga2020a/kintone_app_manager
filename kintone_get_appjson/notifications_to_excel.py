@@ -451,7 +451,6 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                     cell_d.border = thin_border
                     cell_d.alignment = Alignment(horizontal='center', vertical='center')
 
-
                     # D列が「停止中」の場合、B, C, D列の背景色を淡いグレーに設定
                     if cell_d.value == "停止中":
                         gray_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
@@ -590,7 +589,7 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     field_fill = PatternFill(start_color="CCCCFF", end_color="CCCCFF", fill_type="solid")  # 薄い青
     
     # ヘッダー行 - フィールドタイプ列を追加
-    headers = ["No.", "通知先種別", "通知先", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
+    headers = ["No.", "通知先種別", "通知先","メール通知種別\n自分宛の通知", "メール通知種別\nすべての通知", "サブグループ含む", "レコード追加", "レコード編集", "コメント追加", "ステータス変更", "ファイル読込"]
     for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx)
         cell.value = header
@@ -668,8 +667,10 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
         # データを行に設定
         row_data = [
             row_idx - 1,  # No.
-            type_jp + ' (' + form_field_type + ')',  # 通知先タイプ
+            type_jp + (' (' + form_field_type + ')' if form_field_type else ''),  # 通知先タイプ
             entity_code + ' (フィールド名)' if type_jp == 'フィールド' else entity_code,  # 通知先
+            "●" if type_jp.startswith("フィールド") else "",  # フィールド
+            "●" if not type_jp.startswith("フィールド") else "",  # フィールド
             "●" if notify.get("includeSubs", False) else "",  # サブグループ含む
             "●" if notify.get("recordAdded", False) else "",  # レコード追加
             "●" if notify.get("recordEdited", False) else "",  # レコード編集
@@ -687,19 +688,23 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
             cell.border = thin_border
             
             # 通知先種別に応じた背景色を設定（B列）
-            if col_idx == 2 and value:
-                if value == "ユーザー":
+            if col_idx in [2, 3]:
+                if type_jp == "ユーザー":
                     cell.fill = user_fill
-                elif value == "グループ":
+                elif type_jp == "グループ":
                     cell.fill = group_fill
-                elif value == "フィールド":
+                elif type_jp == "フィールド":
                     cell.fill = field_fill
                 elif row_fill:
                     cell.fill = row_fill
+            if col_idx in [2, 3]:
+                if type_jp.startswith("フィールド"):
+                    cell.fill = field_fill
+
             elif row_fill and col_idx != 2:  # B列以外
                 cell.fill = row_fill
                 
-            if col_idx >= 5:  # チェックボックス的な列は中央揃え
+            if col_idx >= 4:  # チェックボックス的な列は中央揃え
                 cell.alignment = Alignment(horizontal='center')
     
     # コメント通知設定
@@ -715,16 +720,22 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
         cell = ws.cell(row=row_idx, column=col_idx)
         cell.fill = section_fill
         cell.border = thin_border
-    
-    # 列幅の調整
-    for col_idx in range(4, len(headers) + 1):  # A, B, C列は既に設定済みなので4列目から設定
+        
+    ## 列幅の調整
+    # 列幅の設定を辞書で定義
+    column_widths = {
+        # 特定の列に特別な幅を設定
+        4: 15,  # メール通知種別自分宛の通知
+        5: 15,  # メール通知種別すべての通知
+        # デフォルト値を設定
+        'default': 15
+    }
+    # 列幅の調整処理
+    for col_idx in range(4, len(headers) + 1):
         column_letter = get_column_letter(col_idx)
-        if col_idx == 4:  # 通知先列
-            ws.column_dimensions[column_letter].width = 20
-        elif col_idx == 5:  # フィールドタイプ列（新しく追加）
-            ws.column_dimensions[column_letter].width = 15
-        else:  # その他の列
-            ws.column_dimensions[column_letter].width = 15
+        # 辞書から幅を取得（指定がなければデフォルト値を使用）
+        width = column_widths.get(col_idx, column_widths['default'])
+        ws.column_dimensions[column_letter].width = width
     
     # グループメンバー情報を追加
     if group_codes:
@@ -1016,6 +1027,7 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
     ws.cell(row=row_idx, column=1).value = "通知先種別：グループ"
     ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
     ws.cell(row=row_idx, column=1).fill = group_header_fill
+    ws.cell(row=row_idx, column=2).fill = group_header_fill
     row_idx += 1
     
     # 重複するグループコードを除去
@@ -1069,7 +1081,6 @@ def add_group_members_table(ws, row_idx, group_codes, header_font, header_fill, 
             cell_d = ws.cell(row=row_idx, column=4)
             cell_d.value = "停止中" if user.get('isDisabled', False) else ""
             cell_d.border = thin_border
-            cell_d.alignment = Alignment(horizontal='center', vertical='center')
 
             # D列が「停止中」の場合、B, C, D列の背景色を淡いグレーに設定
             if cell_d.value == "停止中":
@@ -1185,6 +1196,7 @@ def add_user_information_table(ws, row_idx, user_codes, header_font, header_fill
     ws.cell(row=row_idx, column=1).value = "通知先種別：ユーザー 情報"
     ws.cell(row=row_idx, column=1).font = Font(bold=True, size=12)
     ws.cell(row=row_idx, column=1).fill = user_header_fill
+    ws.cell(row=row_idx, column=2).fill = user_header_fill
     row_idx += 1
     
     # 重複するユーザーコードを除去
@@ -1205,18 +1217,18 @@ def add_user_information_table(ws, row_idx, user_codes, header_font, header_fill
         # ユーザーが存在しない場合はコードのみ表示
         if user_code not in user_yaml_data:
             # A列: アカウント名（コードのみ）
-            cell_a = ws.cell(row=row_idx, column=2)
-            cell_a.value = user_code
-            cell_a.border = thin_border
-            
-            # B列: メールアドレス（空欄）
-            cell_b = ws.cell(row=row_idx, column=3)
+            cell_b = ws.cell(row=row_idx, column=2)
+            cell_b.value = user_code
             cell_b.border = thin_border
             
-            # C列: 停止中（空欄）
-            cell_c = ws.cell(row=row_idx, column=4)
+            # B列: メールアドレス（空欄）
+            cell_c = ws.cell(row=row_idx, column=3)
             cell_c.border = thin_border
-            cell_c.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # C列: 停止中（空欄）
+            cell_d = ws.cell(row=row_idx, column=4)
+            cell_d.border = thin_border
+            cell_d.alignment = Alignment(horizontal='center', vertical='center')
             
             row_idx += 1
             continue
@@ -1224,23 +1236,23 @@ def add_user_information_table(ws, row_idx, user_codes, header_font, header_fill
         user_info = user_yaml_data[user_code]
         
         # A列: アカウント名
-        cell_a = ws.cell(row=row_idx, column=2)
-        cell_a.value = user_info.get('username', user_code)
-        cell_a.border = thin_border
-        
-        # B列: メールアドレス
-        cell_b = ws.cell(row=row_idx, column=3)
-        cell_b.value = user_info.get('email', '')
+        cell_b = ws.cell(row=row_idx, column=2)
+        cell_b.value = user_info.get('username', user_code)
         cell_b.border = thin_border
         
-        # C列: 停止中かどうか
-        cell_c = ws.cell(row=row_idx, column=4)
-        cell_c.value = "停止中" if user_info.get('isDisabled', False) else ""
+        # B列: メールアドレス
+        cell_c = ws.cell(row=row_idx, column=3)
+        cell_c.value = user_info.get('email', '')
         cell_c.border = thin_border
-        cell_c.alignment = Alignment(horizontal='center', vertical='center')
+        
+        # C列: 停止中かどうか
+        cell_d = ws.cell(row=row_idx, column=4)
+        cell_d.value = "停止中" if user_info.get('isDisabled', False) else ""
+        cell_d.border = thin_border
+        cell_d.alignment = Alignment(horizontal='center', vertical='center')
 
         # C列が「停止中」の場合、行全体の背景色を淡いグレーに設定
-        if cell_c.value == "停止中":
+        if cell_d.value == "停止中":
             gray_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
             for col in range(1, 5):  # A, B, C列
                 ws.cell(row=row_idx, column=col).fill = gray_fill
