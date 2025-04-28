@@ -1260,13 +1260,35 @@ class KintoneApp:
             ("レコード複製", "有効" if settings_data.get("enableDuplicateRecord", False) else "無効"),
             ("インライン編集", "有効" if settings_data.get("enableInlineRecordEditing", False) else "無効"),
             ("数値の精度", f"桁数: {settings_data.get('numberPrecision', {}).get('digits', '')}, 小数点: {settings_data.get('numberPrecision', {}).get('decimalPlaces', '')}"),
+            ("数値の丸め方", {
+                "HALF_EVEN": "最近接偶数への丸め",
+                "UP": "切り上げ",
+                "DOWN": "切り捨て"
+            }.get(settings_data.get('numberPrecision', {}).get('roundingMode', 'HALF_EVEN'), "最近接偶数丸め")),
             ("会計年度開始月", settings_data.get("firstMonthOfFiscalYear", "")),
             ("リビジョン", settings_data.get("revision", ""))
         ]
 
+        light_green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+        bold_font = Font(bold=True)
+
         for item, value in settings_items:
-            ws.cell(row=row, column=1, value=item).border = thin_border
-            ws.cell(row=row, column=2, value=value).border = thin_border
+            cell_a = ws.cell(row=row, column=1, value=item)
+            cell_b = ws.cell(row=row, column=2, value=value)
+            
+            # A列の背景色を設定
+            cell_a.fill = light_green_fill
+            
+            # ボーダーを設定
+            cell_a.border = thin_border
+            cell_b.border = thin_border
+            
+            # 特定の行をboldに設定
+            if item in ["インライン編集", "一括削除", "タイトルフィールド"]:
+                cell_a.font = bold_font
+                cell_b.font = bold_font
+                cell_b.fill = PatternFill(start_color="FFD9D9", end_color="FFD9D9", fill_type="solid")
+                
             row += 1
 
         # データ行のスタイル設定
