@@ -1006,6 +1006,10 @@ class KintoneApp:
         self._write_excel_headers(formatter)
         self._apply_group_formatting(formatter)
         self._write_js_field_code_usage(formatter)
+        
+        # 設定シートの追加
+        self._create_settings_sheet(workbook)
+        
         formatter.save()  # save メソッドを呼び出して Excel ファイルを保存
         print(f"Excelレポートを作成しました: {excel_filename}")
 
@@ -1203,6 +1207,72 @@ class KintoneApp:
                 print(f"JSファイル {js_file.name} のシートを作成しました。")
             except Exception as e:
                 print(f"シート {sheet_name} の作成中にエラーが発生しました: {e}")
+
+    def _create_settings_sheet(self, workbook):
+        """設定情報を新しいシートとして追加"""
+        # 設定ファイルを読み込む
+        settings_file = self.json_dir / f"{self.appid}_settings.json"
+        if not settings_file.exists():
+            print(f"設定ファイルが見つかりません: {settings_file}")
+            return
+
+        with open(settings_file, 'r', encoding='utf-8') as f:
+            settings_data = json.load(f)
+
+        # 新しいシートを作成
+        ws = workbook.create_sheet(title="アプリ設定")
+
+        # スタイル定義
+        header_font = Font(bold=True, size=11, name='Arial')
+        header_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+        header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+
+        # ヘッダー行の設定
+        headers = ["設定項目", "設定値"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+            cell.border = thin_border
+
+        # 列幅の設定
+        ws.column_dimensions['A'].width = 30
+        ws.column_dimensions['B'].width = 50
+
+        # データの書き込み
+        row = 2
+        settings_items = [
+            ("アプリ名", settings_data.get("name", "")),
+            ("説明", settings_data.get("description", "")),
+            ("アイコン", settings_data.get("icon", {}).get("key", "")),
+            ("テーマ", settings_data.get("theme", "")),
+            ("タイトルフィールド", settings_data.get("titleField", {}).get("code", "")),
+            ("サムネイル表示", "有効" if settings_data.get("enableThumbnails", False) else "無効"),
+            ("一括削除", "有効" if settings_data.get("enableBulkDeletion", False) else "無効"),
+            ("コメント", "有効" if settings_data.get("enableComments", False) else "無効"),
+            ("レコード複製", "有効" if settings_data.get("enableDuplicateRecord", False) else "無効"),
+            ("インライン編集", "有効" if settings_data.get("enableInlineRecordEditing", False) else "無効"),
+            ("数値の精度", f"桁数: {settings_data.get('numberPrecision', {}).get('digits', '')}, 小数点: {settings_data.get('numberPrecision', {}).get('decimalPlaces', '')}"),
+            ("会計年度開始月", settings_data.get("firstMonthOfFiscalYear", "")),
+            ("リビジョン", settings_data.get("revision", ""))
+        ]
+
+        for item, value in settings_items:
+            ws.cell(row=row, column=1, value=item).border = thin_border
+            ws.cell(row=row, column=2, value=value).border = thin_border
+            row += 1
+
+        # データ行のスタイル設定
+        for row in ws.iter_rows(min_row=2, max_row=row-1):
+            for cell in row:
+                cell.alignment = Alignment(vertical='center', wrap_text=True)
 
     def export_all_records(self, get_all=False):
         url = f"https://{self.subdomain}.cybozu.com/k/v1/records.json"
