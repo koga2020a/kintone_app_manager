@@ -8,6 +8,7 @@ previous_output/
 
 .kintone.env
 .env
+__pycache__/
 
 old_*
 
