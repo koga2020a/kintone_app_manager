@@ -276,107 +276,126 @@ def get_user_group_info(config, logger, output_format="excel"):
         )
         return False
 
-# アプリのJSONデータ取得
 def get_app_json(config, logger, app_id=None):
     """
-    kintone_get_appjson の機能を呼び出してアプリのJSONデータを取得
+    get_app_json を使って複数のスクリプトを順に実行するラッパー関数
+
+    :param config: 設定 dict
+    :param logger: ロガー
+    :param app_id: アプリID（指定しない場合は全アプリ）
+    :return: すべての処理が成功したら True、それ以外は False
     """
-    logger.info("アプリのJSONデータ取得を開始します")
+    scripts_to_run = [
+        "download2yaml_excel.py",
+    ]
     
-    script_path = APPJSON_DIR / "download2yaml_excel.py"
-    
+    scripts_get_app_json = "download2yaml_excel.py"
+    script = scripts_get_app_json
+    logger.info(f"==== スクリプト [{script}] の実行開始 ====")
+    result = get_app_json_do(config, logger, app_id=app_id, script_filename=script)
+    if not result:
+        logger.error(f"スクリプト [{script}] の実行に失敗しました")
+        return False
+    logger.info(f"==== スクリプト [{script}] の実行完了 ====")
+
+
+
+    scripts_to_run = [
+        "process_workflow_to_excel.py",
+    ]
+    for script in scripts_to_run:
+        logger.info(f"==== スクリプト [{script}] の実行開始 ====")
+        result = get_app_json_do(config, logger, app_id=app_id, script_filename=script)
+        if not result:
+            logger.error(f"スクリプト [{script}] の実行に失敗しました")
+            return False
+        logger.info(f"==== スクリプト [{script}] の実行完了 ====")
+
+
+
+    return True
+
+def get_app_json_do(config, logger, app_id=None, script_filename="download2yaml_excel.py"):
+    """
+    指定したスクリプトを使ってアプリのJSONデータを取得／処理します。
+
+    :param config: 設定 dict（'app_tokens', 'subdomain', 'username', 'password' を含む）
+    :param logger: ロガーオブジェクト
+    :param app_id: 取得対象のアプリID（None の場合は全アプリを処理）
+    :param script_filename: 実行する Python スクリプト名
+    :return: 成功したら True、いずれかで失敗したら False
+    """
+    logger.info(f"スクリプト [{script_filename}] を使ってアプリのJSONデータ取得を開始します")
+
+    script_path = APPJSON_DIR / script_filename
     if not script_path.exists():
         logger.error(f"スクリプトファイルが見つかりません: {script_path}")
         return False
-    
-    # 出力ディレクトリが存在しない場合は作成
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    
-    # app_tokensからアプリIDとAPIトークンを取得
+
+    # 出力ディレクトリを準備
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 設定から app_tokens を取得
     app_tokens = config.get('app_tokens', {})
-    
-    # デバッグ用
-    logger.info(f"app_tokens: {dict((k, v[:4] + '*'*(len(v)-8) + v[-4:]) for k,v in app_tokens.items())}")
-    #logger.info(f"app_tokens keys type: {[type(k) for k in app_tokens.keys()]}")
-    
-    if app_id:
-        # 特定のアプリIDが指定された場合
-        app_id_str = str(app_id)
-        app_id_int = int(app_id)
-        
-        # 文字列キーと整数キーの両方をチェック
-        if app_id_str in app_tokens:
-            api_token = app_tokens[app_id_str]
-        elif app_id_int in app_tokens:
-            api_token = app_tokens[app_id_int]
+    logger.info(
+        "app_tokens: "
+        + ", ".join(f"{k}: {v[:4]}***{v[-4:]}" for k, v in app_tokens.items())
+    )
+
+    # 処理対象リストを作成
+    items = []
+    if app_id is not None:
+        # 単一のアプリID指定時は、文字列キー／数値キーの両方をチェック
+        token = None
+        key_str = str(app_id)
+        if key_str in app_tokens:
+            token = app_tokens[key_str]
+        elif app_id in app_tokens:
+            token = app_tokens[app_id]
         else:
-            logger.error(f"アプリID {app_id} のAPIトークンが設定されていません")
+            logger.error(f"アプリID {app_id} の API トークンが設定されていません")
             return False
-            
+        items = [(key_str, token)]
+    else:
+        # 全アプリを処理
+        items = [(str(k), v) for k, v in app_tokens.items()]
+
+    success = True
+    for aid, api_token in items:
+        logger.info(f"アプリID {aid} の処理を開始します")
         cmd = [
             sys.executable,
             str(script_path),
-            str(app_id),
+            aid,
             api_token,
             config["subdomain"],
             config["username"],
-            config["password"]
+            config["password"],
         ]
-        
+        logger.info(
+            f"実行コマンド: python {script_path} {aid} ****** "
+            f"{config['subdomain']} {config['username']} ********"
+        )
+
         try:
-            logger.info(f"実行コマンド: python {script_path} {app_id} ****** {config['subdomain']} {config['username']} ********")
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            logger.info(f"アプリID {app_id} のJSONデータを取得しました")
-            logger.debug(f"出力: {result.stdout}")
-            return True
+            logger.info(f"アプリID {aid} の JSON データを取得しました")
+            logger.debug(f"標準出力:\n{result.stdout}")
         except subprocess.CalledProcessError as e:
-            logger.error(f"アプリのJSONデータ取得中にエラーが発生しました: {e}")
-            logger.error(f"標準出力: {e.stdout}")
-            logger.error(f"標準エラー: {e.stderr}")
+            logger.error(f"アプリID {aid} 取得中にエラー: {e}")
+            logger.error(f"stdout:\n{e.stdout}")
+            logger.error(f"stderr:\n{e.stderr}")
             log_error_to_file(
-                logger, 
-                e, 
-                command=cmd, 
-                stdout=e.stdout, 
-                stderr=e.stderr, 
-                context=f"アプリID {app_id} のJSONデータ取得"
+                logger,
+                e,
+                command=cmd,
+                stdout=e.stdout,
+                stderr=e.stderr,
+                context=f"アプリID {aid} のJSONデータ取得",
             )
-            return False
-    else:
-        # 全てのアプリを処理
-        success = True
-        for app_id, api_token in app_tokens.items():
-            logger.info(f"アプリID {app_id} の処理を開始します")
-            cmd = [
-                sys.executable,
-                str(script_path),
-                str(app_id),
-                api_token,
-                config["subdomain"],
-                config["username"],
-                config["password"]
-            ]
-            
-            try:
-                logger.info(f"実行コマンド: python {script_path} {app_id} ****** {config['subdomain']} {config['username']} ********")
-                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-                logger.info(f"アプリID {app_id} のJSONデータを取得しました")
-                logger.debug(f"出力: {result.stdout}")
-            except subprocess.CalledProcessError as e:
-                logger.error(f"アプリID {app_id} のJSONデータ取得中にエラーが発生しました: {e}")
-                logger.error(f"標準出力: {e.stdout}")
-                logger.error(f"標準エラー: {e.stderr}")
-                log_error_to_file(
-                    logger, 
-                    e, 
-                    command=cmd, 
-                    stdout=e.stdout, 
-                    stderr=e.stderr, 
-                    context=f"アプリID {app_id} のJSONデータ取得"
-                )
-                success = False
-                
-        return success
+            success = False
+
+    return success
 
 # グループ操作
 def manage_groups(config, logger, action, params=None):
@@ -597,10 +616,16 @@ def generate_acl_excel(config, logger, app_id=None):
         else:
             return False
 
-# 通知設定をExcelに出力
 def generate_notifications_excel(config, logger, app_id=None):
+    return generate_excel_proc(config, logger, app_id=app_id, script_filename="notifications_to_excel.py", excel_filename="notifications.xlsx")
+
+def generate_process_workflow_excel(config, logger, app_id=None):
+    return generate_excel_proc(config, logger, app_id=app_id, script_filename="process_workflow_to_excel.py", excel_filename="process_workflow.xlsx")
+
+# 通知設定をExcelに出力
+def generate_excel_proc(config, logger, app_id=None, script_filename="notifications_to_excel.py", excel_filename="notifications.xlsx"):
     """
-    kintone_get_appjson の notifications_to_excel.py を使用して通知設定をExcelに変換する
+    kintone_get_appjson の pythonファイル を使用して通知設定をExcelに変換する
     
     Args:
         config (dict): 設定情報
@@ -612,7 +637,7 @@ def generate_notifications_excel(config, logger, app_id=None):
     """
     logger.info("通知設定のExcel変換を開始します")
     
-    script_path = APPJSON_DIR / "notifications_to_excel.py"
+    script_path = APPJSON_DIR / script_filename
     
     if not script_path.exists():
         logger.error(f"スクリプトファイルが見つかりません: {script_path}")
@@ -643,7 +668,7 @@ def generate_notifications_excel(config, logger, app_id=None):
             logger.error(f"アプリID {app_id} に対応するディレクトリが見つかりません")
             return False
         
-        output_file = output_dir / f"{app_id}_notifications.xlsx"
+        output_file = output_dir / f"{app_id}_{excel_filename}"
         
         cmd = [
             sys.executable,
@@ -685,7 +710,7 @@ def generate_notifications_excel(config, logger, app_id=None):
                 success = False
                 continue
             
-            output_file = output_dir / f"{app_id}_notifications.xlsx"
+            output_file = output_dir / f"{app_id}_{excel_filename}"
             
             cmd = [
                 sys.executable,
@@ -981,6 +1006,10 @@ def main():
     # 通知設定Excel生成コマンド
     notifications_parser = subparsers.add_parser('notifications', help='アプリの通知設定をExcelに変換（出力: [アプリID]_notifications.xlsx）')
     notifications_parser.add_argument('--id', type=int, help='変換するアプリID')
+
+    # プロセスワークフローExcel生成コマンド
+    process_workflow_parser = subparsers.add_parser('process_workflow', help='アプリのプロセスワークフローをExcelに変換（出力: [アプリID]_process_workflow.xlsx）')
+    process_workflow_parser.add_argument('--id', type=int, help='変換するアプリID')
     
     # 全機能実行コマンド
     all_parser = subparsers.add_parser('all', help='すべての機能を順番に実行（複数の出力ファイルが生成されます）')
@@ -1164,6 +1193,14 @@ def main():
                     print(f"- {file}")
             else:
                 print(f"通知設定を {result} に出力しました")
+
+    elif args.command == 'process_workflow':
+        result = generate_process_workflow_excel(config, logger, args.id)
+        if result:
+            if isinstance(result, list):
+                print("以下のファイルにプロセスワークフローを出力しました:")
+                for file in result:
+                    print(f"- {file}")
             
     elif args.command == 'all':
         # すべての機能を順番に実行
@@ -1216,16 +1253,17 @@ def main():
             else:
                 print(f"通知設定を {notifications_result} に出力しました")
         
-        # 6. 通知設定のExcel変換
-        notifications_result = generate_notifications_excel(config, logger)
-        if notifications_result:
-            if isinstance(notifications_result, list):
-                print("以下のファイルに通知設定を出力しました:")
-                for file in notifications_result:
+        # 6. プロセスワークフローのExcel変換
+        process_workflow_result = generate_process_workflow_excel(config, logger)
+        if process_workflow_result:
+            if isinstance(process_workflow_result, list):
+                print("以下のファイルにプロセスワークフローを出力しました:")
+                for file in process_workflow_result:
                     print(f"- {file}")
             else:
-                print(f"通知設定を {notifications_result} に出力しました")
-    
+                print(f"プロセスワークフローを {process_workflow_result} に出力しました")
+        
+   
     # allコマンドの場合のみバックアップと日時部分の除去を実行
     if args.command == 'all':
         # 処理完了後にバックアップを作成
