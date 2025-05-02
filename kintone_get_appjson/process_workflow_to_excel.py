@@ -145,7 +145,7 @@ def create_workflow_excel(app_id, process_data, output_file=None):
     ws_states = wb.create_sheet(title="状態一覧")
     
     # ヘッダー行の設定
-    headers = ["状態名", "インデックス", "担当者タイプ", "担当者情報"]
+    headers = ["状態名", "インデックス", "作業者タイプ", "作業者"]
     for col, header in enumerate(headers, 1):
         cell = ws_states.cell(row=1, column=col, value=header)
         cell.font = header_font
@@ -161,7 +161,7 @@ def create_workflow_excel(app_id, process_data, output_file=None):
         assignee = state_info.get('assignee', {})
         ws_states.cell(row=row, column=3, value=assignee.get('type', ''))
         
-        # 担当者情報の処理を修正
+        # 作業者の処理を修正
         entities = assignee.get('entities', [])
         entity_info = []
         for entity in entities:
@@ -217,13 +217,13 @@ def create_workflow_excel(app_id, process_data, output_file=None):
     """
     凡例：遷移マトリクスの構造
     ------------------------------------------------------------
-    |          | 担当者情報 | 状態1 | 状態2 | 状態3 | ...
+    |          |  作業者  | 状態1 | 状態2 | 状態3 | ...
     |----------|------------|--------|--------|--------|--------
     | 状態1    | 担当者     | アクション情報 | ... |
     | 状態2    | 担当者     |        |      |
     | 状態3    | 担当者     |        |      |
     
-    1. 担当者情報の形式：
+    1. 作業者の形式：
        - FIELD_ENTITY: 作成者
        - USER: ユーザー名@domain
        - GROUP: グループ名
@@ -246,7 +246,7 @@ def create_workflow_excel(app_id, process_data, output_file=None):
     cell1.font = Font(bold=True)
     ws_matrix.row_dimensions[1].height = 30
     
-    cell2 = ws_matrix.cell(row=1, column=2, value="担当者情報") 
+    cell2 = ws_matrix.cell(row=1, column=2, value="作業者") 
     cell2.alignment = Alignment(horizontal='center', vertical='center')
     cell2.font = Font(bold=True)
     for col, status in enumerate(status_names, 1):
@@ -264,7 +264,7 @@ def create_workflow_excel(app_id, process_data, output_file=None):
         cell.fill = green_fill
         cell.alignment = header_alignment
         cell.border = thin_border
-        # 担当者情報
+        # 作業者
         assignee = states_dict[status].get('assignee', {})
         entities = assignee.get('entities', [])
         entity_info = []
