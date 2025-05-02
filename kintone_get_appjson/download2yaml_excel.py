@@ -886,7 +886,7 @@ class KintoneApp:
             js_info.append({'url': url, 'file_name': safe_filename, 'type': 'url'})
         except subprocess.CalledProcessError as e:
             print(f"Error downloading URL content {url} with curl: {e}")
-            sys.exit(1)
+            #sys.exit(1)
 
     def get_customize_info(self):
         url = f"https://{self.subdomain}.cybozu.com/k/v1/app/customize.json?app={self.appid}"
