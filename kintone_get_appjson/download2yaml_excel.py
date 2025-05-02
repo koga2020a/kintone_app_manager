@@ -18,6 +18,22 @@ from openpyxl.utils.cell import column_index_from_string, get_column_letter, coo
 from typing import Union
 from urllib.parse import urlparse
 
+# グローバル変数
+EXIT_ON_ERROR = True  # エラー時に終了するかどうかのフラグ
+
+def exit_with_error(message: str = "処理を中断します"):
+    """エラー時に終了する関数
+    
+    Args:
+        message (str): エラーメッセージ
+    """
+    print(f"エラー: {message}")
+    if EXIT_ON_ERROR:
+        print("sys.exit(1) を実行します")
+        sys.exit(1)
+    else:
+        print("EXIT_ON_ERROR=False のため、処理を継続します")
+
 # ─── 補助関数 ─────────────────────────────────────────────
 def process_file(layout_file_path, fields_file_path, output_file):
     """レイアウトファイルとフィールドファイルを処理してTSVを生成"""
@@ -776,7 +792,7 @@ class KintoneApp:
         self.api_token = api_token or config.get('api_token')
         if not all([self.subdomain, self.username, self.password]):
             print("Error: 認証情報が不足しています。コマンドライン引数または設定ファイルで指定してください。")
-            sys.exit(1)
+            exit_with_error('認証情報が不足しています。コマンドライン引数または設定ファイルで指定してください。')
         self.app_name = self.get_app_name_by_settings()
         self.base_dir, self.js_dir, self.json_dir = self.create_directory_structure()
 
@@ -807,7 +823,7 @@ class KintoneApp:
             return json.loads(content)
         except requests.exceptions.RequestException as e:
             print(f"Error fetching data from {url}: {e}")
-            sys.exit(1)
+            exit_with_error(f"データの取得に失敗しました: {url}")
 
     @staticmethod
     def sanitize_app_name(app_name):
@@ -862,7 +878,7 @@ class KintoneApp:
             js_info.append({'file_id': file_key, 'file_name': safe_filename, 'type': 'file'})
         except requests.exceptions.RequestException as e:
             print(f"Error downloading file {file_name}: {e}")
-            sys.exit(1)
+            exit_with_error(f"ファイルのダウンロードに失敗しました: {file_name}")
 
     def download_url_content(self, url, js_info):
         def make_safe_filename(url: str) -> str:
@@ -886,7 +902,7 @@ class KintoneApp:
             js_info.append({'url': url, 'file_name': safe_filename, 'type': 'url'})
         except subprocess.CalledProcessError as e:
             print(f"Error downloading URL content {url} with curl: {e}")
-            #sys.exit(1)
+            #exit_with_error(f"ファイルのダウンロードに失敗しました: {url}")
 
     def get_customize_info(self):
         url = f"https://{self.subdomain}.cybozu.com/k/v1/app/customize.json?app={self.appid}"
@@ -1334,7 +1350,7 @@ class KintoneApp:
                 offset += limit
             except requests.exceptions.RequestException as e:
                 print(f"Error fetching records: {e}")
-                sys.exit(1)
+                exit_with_error(f"Error fetching records: {e}")
         if all_records:
             self._export_records_json(all_records)
             self._export_records_tsv_excel(all_records)
@@ -1349,7 +1365,7 @@ class KintoneApp:
             print(f"全レコードをJSON形式で {json_file} にエクスポートしました。")
         except IOError as e:
             print(f"JSONファイルの保存中にエラーが発生しました: {e}")
-            sys.exit(1)
+            exit_with_error("JSONファイルの保存に失敗しました")
 
     def _export_records_tsv_excel(self, all_records):
         flattened_records = [flatten_record(record) for record in all_records]
@@ -1375,7 +1391,7 @@ class KintoneApp:
             self._export_records_excel(tsv_file)
         except IOError as e:
             print(f"ファイルの保存中にエラーが発生しました: {e}")
-            sys.exit(1)
+            exit_with_error("TSVファイルの保存に失敗しました")
 
     def _export_records_excel(self, tsv_file):
         excel_file = self.base_dir / f"{self.appid}_records.xlsx"
@@ -1427,4 +1443,4 @@ if __name__ == "__main__":
     else:
         print("Usage: python script.py <appid> [<api_token> <subdomain> <username> <password>]")
         print("Note: 認証情報は config_UserAccount.yaml からも読み込めます")
-        sys.exit(1)
+        exit_with_error("引数が不正です")
