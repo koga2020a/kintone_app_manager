@@ -15,11 +15,6 @@ from pathlib import Path
 from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, PatternFill, Border, Side, Font
-from openpyxl.utils.cell import get_column_letter
-from openpyxl.drawing.image import Image
-import matplotlib.pyplot as plt
-import networkx as nx
-from collections import defaultdict
 
 # 定数定義
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -60,31 +55,6 @@ def create_workflow_graph(process_states):
                 G.add_edge(state_name, next_state, action=action_name)
     
     return G
-
-def draw_workflow_graph(G, output_path):
-    """ワークフロー図を描画して保存"""
-    plt.figure(figsize=(12, 8))
-    pos = nx.spring_layout(G, k=1, iterations=50)
-    
-    # ノードの描画
-    nx.draw_networkx_nodes(G, pos, node_color='lightblue', 
-                          node_size=2000, alpha=0.8)
-    
-    # エッジの描画
-    nx.draw_networkx_edges(G, pos, edge_color='gray', 
-                          arrows=True, arrowsize=20)
-    
-    # ラベルの描画
-    nx.draw_networkx_labels(G, pos, font_size=10, font_family='Meiryo')
-    
-    # エッジラベルの描画
-    edge_labels = nx.get_edge_attributes(G, 'action')
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, 
-                                font_size=8, font_family='Meiryo')
-    
-    plt.axis('off')
-    plt.savefig(output_path, format='png', dpi=300, bbox_inches='tight')
-    plt.close()
 
 def find_all_paths(states, actions):
     from collections import defaultdict
@@ -141,6 +111,7 @@ def create_workflow_excel(app_id, process_data, output_file=None):
         bottom=Side(style='thin')
     )
     green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+    green_light_fill = PatternFill(start_color="EBFAEB", end_color="EBFAEB", fill_type="solid")
     
     # 1. 基本情報シート
     ws_basic = wb.create_sheet(title="基本情報")
@@ -240,6 +211,33 @@ def create_workflow_excel(app_id, process_data, output_file=None):
     # ステータス名リスト（indexの昇順）
     states_dict = process_data.get('states', {})
     status_names = sorted(states_dict.keys(), key=lambda k: int(states_dict[k].get('index', 0)))
+
+    """
+    凡例：遷移マトリクスの構造
+    ------------------------------------------------------------
+    |          | 担当者情報 | 状態1 | 状態2 | 状態3 | ...
+    |----------|------------|--------|--------|--------|--------
+    | 状態1    | 担当者     | アクション情報 | ... |
+    | 状態2    | 担当者     |        |      |
+    | 状態3    | 担当者     |        |      |
+    
+    1. 担当者情報の形式：
+       - FIELD_ENTITY: 作成者
+       - USER: ユーザー名@domain
+       - GROUP: グループ名
+       - サブ組織を含む場合は「(サブ組織を含む)」が付加
+    
+    2. アクション情報の形式：
+       →アクション名→
+       【条件】
+       条件文
+       
+       例：
+       →処理開始→
+       【条件】
+       レコード番号 = "100"
+    """
+    
     # ヘッダー
     ws_matrix.cell(row=1, column=1, value="")
     ws_matrix.cell(row=1, column=2, value="担当者情報")
@@ -286,6 +284,7 @@ def create_workflow_excel(app_id, process_data, output_file=None):
         )
         cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
         cell.border = thin_border
+        cell.fill = green_light_fill
     # 列幅を指定
     ws_matrix.column_dimensions['A'].width = 28.57  # 200px
     ws_matrix.column_dimensions['B'].width = 42.86  # 300px
