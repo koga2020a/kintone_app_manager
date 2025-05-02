@@ -112,6 +112,8 @@ def create_workflow_excel(app_id, process_data, output_file=None):
     )
     green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
     green_light_fill = PatternFill(start_color="EBFAEB", end_color="EBFAEB", fill_type="solid")
+    blue_fill = PatternFill(start_color="DEEBF7", end_color="DEEBF7", fill_type="solid")  
+    blue_light_fill = PatternFill(start_color="F2F9FF", end_color="F2F9FF", fill_type="solid")
     
     # 1. 基本情報シート
     ws_basic = wb.create_sheet(title="基本情報")
@@ -239,14 +241,20 @@ def create_workflow_excel(app_id, process_data, output_file=None):
     """
     
     # ヘッダー
-    ws_matrix.cell(row=1, column=1, value="")
-    ws_matrix.cell(row=1, column=2, value="担当者情報")
+    cell1 = ws_matrix.cell(row=1, column=1, value="ステータス名")
+    cell1.alignment = Alignment(horizontal='center', vertical='center')
+    cell1.font = Font(bold=True)
+    ws_matrix.row_dimensions[1].height = 30
+    
+    cell2 = ws_matrix.cell(row=1, column=2, value="担当者情報") 
+    cell2.alignment = Alignment(horizontal='center', vertical='center')
+    cell2.font = Font(bold=True)
     for col, status in enumerate(status_names, 1):
         cell = ws_matrix.cell(row=1, column=col+2, value=status)
-        cell.font = header_font
-        cell.fill = header_fill
+        cell.fill = PatternFill(start_color="006400", end_color="006400", fill_type="solid")
         cell.alignment = header_alignment
         cell.border = thin_border
+        cell.font = Font(color="FFFFFF", bold=True)
     ws_matrix.cell(row=1, column=1).fill = header_fill
     ws_matrix.cell(row=1, column=2).fill = header_fill
     for row, status in enumerate(status_names, 1):
@@ -280,7 +288,7 @@ def create_workflow_excel(app_id, process_data, output_file=None):
         cond = action.get('filterCond', '')
         cell.value = (
             val + ("\n" if val else "") +
-            f"→{action['name']}→\n【条件】\n{cond}"
+            f"→{action['name']} ↑\n【条件】\n{cond}"
         )
         cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
         cell.border = thin_border
@@ -291,6 +299,22 @@ def create_workflow_excel(app_id, process_data, output_file=None):
     for i in range(3, 3 + len(status_names)):
         col_letter = ws_matrix.cell(row=1, column=i).column_letter
         ws_matrix.column_dimensions[col_letter].width = 28.57  # 200px
+    
+    # 最大列数と最大行数を取得
+    max_col = ws_matrix.max_column
+    max_row = ws_matrix.max_row
+    
+    # 
+    for row in range(1, max_row + 1):
+        for col in range(1, max_col + 1):
+            cell = ws_matrix.cell(row=row, column=col)
+            # 2行目から奇数行の背景色を青色系に変更
+            if row >= 2 and row % 2 == 0 and cell.value:
+                if col <= 2:  # A列とB列
+                    cell.fill = blue_fill
+                else:  # C列以降
+                    cell.fill = blue_light_fill
+
     
     # ファイルを保存
     wb.save(output_file)
