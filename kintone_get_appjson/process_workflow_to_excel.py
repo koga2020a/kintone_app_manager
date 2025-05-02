@@ -305,7 +305,11 @@ def create_workflow_excel(app_id, process_data, output_file=None):
     max_row = ws_matrix.max_row
     
     # 
-    for row in range(1, max_row + 1):
+    # 空白行を挿入するため、下から上に処理
+    for row in range(max_row, 0, -1):
+        # 各行の後に3行の空白行を挿入
+        ws_matrix.insert_rows(row + 1, 1)
+        # 元の行のスタイルを設定
         for col in range(1, max_col + 1):
             cell = ws_matrix.cell(row=row, column=col)
             # 2行目から奇数行の背景色を青色系に変更
@@ -315,6 +319,17 @@ def create_workflow_excel(app_id, process_data, output_file=None):
                 else:  # C列以降
                     cell.fill = blue_light_fill
 
+    black_fill = PatternFill(start_color="000000", end_color="000000", fill_type="solid")
+    max_col = ws_matrix.max_column
+    max_row = ws_matrix.max_row
+    for row in range(max_row, 0, -1):
+        # 1行おきに高さを設定
+        if row % 2 == 0:
+            ws_matrix.row_dimensions[row].height = 6
+            for col in range(1, max_col + 1):
+                cell = ws_matrix.cell(row=row, column=col)
+                cell.fill = black_fill
+    
     
     # ファイルを保存
     wb.save(output_file)
