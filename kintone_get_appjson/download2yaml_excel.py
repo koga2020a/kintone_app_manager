@@ -16,6 +16,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, PatternFill, Border, Side, Font
 from openpyxl.utils.cell import column_index_from_string, get_column_letter, coordinate_from_string
 from typing import Union
+from urllib.parse import urlparse
 
 # ─── 補助関数 ─────────────────────────────────────────────
 def process_file(layout_file_path, fields_file_path, output_file):
@@ -864,9 +865,23 @@ class KintoneApp:
             sys.exit(1)
 
     def download_url_content(self, url, js_info):
-        safe_filename = f"{self.appid}_url_" + re.sub(r'[\\/*?:"<>|]', '_', url) + ".js"
+        def make_safe_filename(url: str) -> str:
+            # URLをパース
+            parsed = urlparse(url)
+            scheme = parsed.scheme
+            netloc = parsed.netloc
+            js_filename = os.path.basename(parsed.path) or 'unknown.js'
+
+            # ファイル名構築
+            base = f"{self.appid}_url_{scheme}__{netloc}_{js_filename}"
+            safe_name = re.sub(r'[\\/*?:"<>|]', '_', base)
+            return safe_name
+
+        safe_filename = make_safe_filename(url)
         file_path = self.js_dir / safe_filename
+
         try:
+            self.js_dir.mkdir(parents=True, exist_ok=True)
             subprocess.run(['curl', '-L', '-o', str(file_path), url], check=True)
             js_info.append({'url': url, 'file_name': safe_filename, 'type': 'url'})
         except subprocess.CalledProcessError as e:
