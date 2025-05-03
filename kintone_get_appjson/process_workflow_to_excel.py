@@ -329,11 +329,111 @@ def create_workflow_excel(app_id, process_data, output_file=None):
             for col in range(1, max_col + 1):
                 cell = ws_matrix.cell(row=row, column=col)
                 cell.fill = black_fill
+    def set_thick_border(ws_matrix, max_row, max_col):
+        """ワークシートの外枠に太い罫線を設定する"""
+        # 太い罫線スタイルを定義
+        thick_border = Border(
+            left=Side(style='thick'),
+            right=Side(style='thick'),
+            top=Side(style='thick'),
+            bottom=Side(style='thick')
+        )
+        
+        # 左上から右下までの外枠に太い罫線を設定
+        for row in range(1, max_row + 1):
+            # 左端の列
+            cell = ws_matrix.cell(row=row, column=1)
+            cell.border = Border(
+                left=Side(style='thick'),
+                right=cell.border.right,
+                top=cell.border.top,
+                bottom=cell.border.bottom
+            )
+            # 右端の列
+            cell = ws_matrix.cell(row=row, column=max_col)
+            cell.border = Border(
+                left=cell.border.left,
+                right=Side(style='thick'),
+                top=cell.border.top,
+                bottom=cell.border.bottom
+            )
+        
+        for col in range(1, max_col + 1):
+            # 上端の行
+            cell = ws_matrix.cell(row=1, column=col)
+            cell.border = Border(
+                left=cell.border.left,
+                right=cell.border.right,
+                top=Side(style='thick'),
+                bottom=cell.border.bottom
+            )
+            # 下端の行
+            cell = ws_matrix.cell(row=max_row, column=col)
+            cell.border = Border(
+                left=cell.border.left,
+                right=cell.border.right,
+                top=cell.border.top,
+                bottom=Side(style='thick')
+            )
+        
+        # 四隅のセルは特別な処理
+        ws_matrix.cell(row=1, column=1).border = Border(
+            left=Side(style='thick'),
+            right=cell.border.right,
+            top=Side(style='thick'),
+            bottom=cell.border.bottom
+        )
+        ws_matrix.cell(row=1, column=max_col).border = Border(
+            left=cell.border.left,
+            right=Side(style='thick'),
+            top=Side(style='thick'),
+            bottom=cell.border.bottom
+        )
+        ws_matrix.cell(row=max_row, column=1).border = Border(
+            left=Side(style='thick'),
+            right=cell.border.right,
+            top=cell.border.top,
+            bottom=Side(style='thick')
+        )
+        ws_matrix.cell(row=max_row, column=max_col).border = Border(
+            left=cell.border.left,
+            right=Side(style='thick'),
+            top=cell.border.top,
+            bottom=Side(style='thick')
+        )
     
+    # 太い罫線を設定
+    set_thick_border(ws_matrix, max_row, max_col)
     
+    # シートの順序を変更
+    wb.move_sheet(ws_matrix, offset=-len(wb.sheetnames)+1)
+    
+    set_font_to_arial(wb)
+
     # ファイルを保存
     wb.save(output_file)
     return output_file
+
+def set_font_to_arial(wb):
+    """全シートの全セルのフォントをArialに設定する"""
+    for sheet in wb.worksheets:
+        for row in sheet.rows:
+            for cell in row:
+                if cell.font:
+                    # 既存のフォント設定を保持しつつ、フォント名のみ変更
+                    new_font = Font(
+                        name='Arial',
+                        size=cell.font.size,
+                        bold=cell.font.bold,
+                        italic=cell.font.italic,
+                        underline=cell.font.underline,
+                        strike=cell.font.strike,
+                        color=cell.font.color
+                    )
+                    cell.font = new_font
+                else:
+                    # フォント設定がない場合は新規作成
+                    cell.font = Font(name='Arial')
 
 def main():
     """メイン関数"""
