@@ -98,7 +98,7 @@ def setup_logging():
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(log_file),
+            logging.FileHandler(log_file, encoding='utf-8'),
             logging.StreamHandler()
         ]
     )
@@ -823,7 +823,6 @@ def remove_datetime_suffix(directory):
     
     # 日時パターン（_YYYYMMDD_HHMMSS）を定義
     datetime_pattern = re.compile(r'_\d{8}_\d{6}')
-    
     try:
         # ディレクトリ内のすべてのファイルとディレクトリを処理
         for item in directory.iterdir():
