@@ -32,7 +32,7 @@ def setup_logging():
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(log_file),
+            logging.FileHandler(log_file, encoding='utf-8'),
             logging.StreamHandler()
         ]
     )
@@ -87,11 +87,14 @@ def find_all_paths(states, actions):
             dfs(state_name, [(None, state_name)], set())
     return paths
 
-def create_workflow_excel(app_id, process_data, output_file=None):
+def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
     """ワークフロー情報をExcelに出力"""
     if output_file is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = OUTPUT_DIR / f"{app_id}_workflow_{timestamp}.xlsx"
+        if app_dir:
+            output_file = app_dir / f"{app_id}_workflow_{timestamp}.xlsx"
+        else:
+            output_file = OUTPUT_DIR / f"{app_id}_workflow_{timestamp}.xlsx"
     
     # Excelワークブックを作成
     wb = Workbook()
@@ -539,7 +542,7 @@ def main():
     
     # Excelファイルの生成
     try:
-        result_file = create_workflow_excel(args.app_id, process_data, output_file)
+        result_file = create_workflow_excel(args.app_id, process_data, output_file, app_dir)
         logger.info(f"プロセスワークフローを {result_file} に出力しました")
         print(result_file)
     except Exception as e:
