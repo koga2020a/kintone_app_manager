@@ -463,7 +463,14 @@ class ExcelExporter:
               ws.cell(row=start_row, column=3, value=row['氏名'])
               ws.cell(row=start_row, column=4, value=row['メールアドレス'])
               ws.cell(row=start_row, column=5, value=row['停止中'])
-              ws.cell(row=start_row, column=6, value=row['所属グループ一覧'])
+
+              groups = row['所属グループ一覧'].split(',')
+              groups = [g.strip() for g in groups]
+              if group_name in groups:
+                  groups.remove(group_name)
+                  groups.insert(0, '*' + group_name)
+              cell_value = ', '.join(groups)
+              ws.cell(row=start_row, column=6, value=cell_value)
               start_row += 1
           else:
             # データがない場合は空行を出力
