@@ -95,7 +95,15 @@ def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
             output_file = app_dir / f"{app_id}_workflow_{timestamp}.xlsx"
         else:
             output_file = OUTPUT_DIR / f"{app_id}_workflow_{timestamp}.xlsx"
-    
+
+    def get_column_letter(col):
+        # 1から26までの数字をA-Zに変換
+        result = ""
+        while col > 0:
+            col, remainder = divmod(col - 1, 26)
+            result = chr(65 + remainder) + result
+        return result
+
     # Excelワークブックを作成
     wb = Workbook()
     
@@ -129,6 +137,9 @@ def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
         cell.fill = header_fill
         cell.alignment = header_alignment
         cell.border = thin_border
+        # 列幅の設定 (200px ≈ 28.57文字)
+        ws_basic.column_dimensions[get_column_letter(col)].width = 54 if col == 4 else 28.57
+    ws_basic.row_dimensions[1].height = 30
     
     # 基本情報の書き込み
     basic_info = [
@@ -141,8 +152,11 @@ def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
         ws_basic.cell(row=row, column=2, value=value)
         for col in range(1, 3):
             cell = ws_basic.cell(row=row, column=col)
-            cell.alignment = Alignment(vertical='center', wrap_text=True)
+            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
             cell.border = thin_border
+        # 行の高さが30未満の場合は30に設定
+        if ws_basic.row_dimensions[row].height is None or ws_basic.row_dimensions[row].height < 30:
+            ws_basic.row_dimensions[row].height = 30
     
     # 2. 状態一覧シート
     ws_states = wb.create_sheet(title="状態一覧")
@@ -155,6 +169,9 @@ def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
         cell.fill = header_fill
         cell.alignment = header_alignment
         cell.border = thin_border
+        # 列幅の設定 (200px ≈ 28.57文字)
+        ws_states.column_dimensions[get_column_letter(col)].width = 54 if col == 4 else 28.57
+    ws_states.row_dimensions[1].height = 30
     
     # 状態一覧の書き込み
     row = 2
@@ -178,9 +195,12 @@ def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
         
         for col in range(1, 5):
             cell = ws_states.cell(row=row, column=col)
-            cell.alignment = Alignment(vertical='center', wrap_text=True)
+            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
             cell.border = thin_border
         
+        # 行の高さが30未満の場合は30に設定
+        if ws_states.row_dimensions[row].height is None or ws_states.row_dimensions[row].height < 30:
+            ws_states.row_dimensions[row].height = 30
         row += 1
     
     # 3. アクション一覧シート
@@ -194,7 +214,10 @@ def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
         cell.fill = header_fill
         cell.alignment = header_alignment
         cell.border = thin_border
-    
+        # 列幅の設定 (200px ≈ 28.57文字)
+        ws_actions.column_dimensions[get_column_letter(col)].width = 54 if col == 4 else 28.57
+        ws_actions.row_dimensions[1].height = 30
+
     # アクション一覧の書き込み
     row = 2
     for action in process_data.get('actions', []):
@@ -205,8 +228,11 @@ def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
         
         for col in range(1, 5):
             cell = ws_actions.cell(row=row, column=col)
-            cell.alignment = Alignment(vertical='center', wrap_text=True)
+            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
             cell.border = thin_border
+        # 行の高さが30未満の場合は30に設定
+        if ws_actions.row_dimensions[row].height is None or ws_actions.row_dimensions[row].height < 30:
+            ws_actions.row_dimensions[row].height = 30
         
         row += 1
     
@@ -310,7 +336,7 @@ def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
     # 
     # 空白行を挿入するため、下から上に処理
     for row in range(max_row, 0, -1):
-        # 各行の後に3行の空白行を挿入
+        # 各行の後に1行の空白行を挿入
         ws_matrix.insert_rows(row + 1, 1)
         # 元の行のスタイルを設定
         for col in range(1, max_col + 1):
@@ -332,6 +358,8 @@ def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
             for col in range(1, max_col + 1):
                 cell = ws_matrix.cell(row=row, column=col)
                 cell.fill = black_fill
+        # 文字列の長さで自動改行のとき、セルの高さを取得できない。
+
     def set_thick_border(ws_matrix, max_row, max_col):
         """ワークシートの外枠に太い罫線を設定する"""
         # 太い罫線スタイルを定義
