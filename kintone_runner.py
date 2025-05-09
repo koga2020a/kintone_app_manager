@@ -569,11 +569,11 @@ def generate_excel_proc(config, logger, app_id=None, script_filename="notificati
         try:
             logger.info(f"実行コマンド: python {script_path} {app_id} --output {output_file}")
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            logger.info(f"アプリID {app_id} の通知設定を {output_file} に出力しました")
+            logger.info(f"アプリID {app_id} の{script_filename}処理の出力を {output_file} に出力しました")
             logger.debug(f"出力: {result.stdout}")
             return str(output_file)
         except subprocess.CalledProcessError as e:
-            logger.error(f"通知設定のExcel変換中にエラーが発生しました: {e}")
+            logger.error(f"{script_filename}のExcel変換中にエラーが発生しました: {e}")
             logger.error(f"標準出力: {e.stdout}")
             logger.error(f"標準エラー: {e.stderr}")
             log_error_to_file(
@@ -582,7 +582,7 @@ def generate_excel_proc(config, logger, app_id=None, script_filename="notificati
                 command=cmd, 
                 stdout=e.stdout, 
                 stderr=e.stderr, 
-                context=f"アプリID {app_id} の通知設定のExcel変換"
+                context=f"アプリID {app_id} の{script_filename}のExcel変換"
             )
             return False
     else:

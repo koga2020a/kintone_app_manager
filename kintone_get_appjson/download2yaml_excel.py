@@ -287,7 +287,7 @@ def prepare_kaigyo_files(js_dir):
 def scan_directory_for_field_codes_with_lines(js_dir):
     """ディレクトリ内のJavaScriptファイルをスキャンしてフィールドコードの使用箇所をマップ化"""
     field_code_map = defaultdict(dict)
-    for file_path in js_dir.glob('*.js'):
+    for file_path in js_dir.rglob('*.js'):
         # ._kaigyo_.js ファイルが存在する場合はそれを使用
         kaigyo_file_path = file_path.with_name(file_path.stem + '._kaigyo_.js')
         if kaigyo_file_path.exists():
@@ -297,7 +297,9 @@ def scan_directory_for_field_codes_with_lines(js_dir):
 
         if file_result:
             for field, lines in file_result.items():
-                field_code_map[field][file_path.name] = lines
+                # サブディレクトリを含むパスを取得
+                relative_path = str(file_path.relative_to(js_dir))
+                field_code_map[field][relative_path] = lines
 
     return dict(field_code_map)
 
@@ -1084,21 +1086,71 @@ class KintoneApp:
 
 
     def _write_js_field_code_usage(self, formatter):
-        js_dir = self.base_dir / 'javascript'
-        # まず、.js_kaigyo.jsファイルを準備
-        prepare_kaigyo_files(js_dir)
-        field_codes_by_js_line_map = scan_directory_for_field_codes_with_lines(js_dir)
+        # .kintone.envファイルからjs_dirsを読み込む
+        env_file = Path('.kintone.env')
+        js_dirs = {}
+        if env_file.exists():
+            try:
+                with open(env_file, 'r', encoding='utf-8') as f:
+                    env_data = yaml.safe_load(f)
+                    if env_data is None:
+                        print("警告: .kintone.envファイルはYAML形式ではありません")
+                    else:
+                        js_dirs = env_data.get('js_dirs', {})
+                        # ディレクトリパスの形式を確認して必要に応じて変換
+                        for key, path in js_dirs.items():
+                            if not Path(path).exists():
+                                # Windows形式からBash形式への変換を試行
+                                if path.startswith('c:\\') or path.startswith('C:\\'):
+                                    bash_path = '/c/' + path[3:].replace('\\', '/')
+                                    if Path(bash_path).exists():
+                                        js_dirs[key] = bash_path
+                                        continue
+                                # Bash形式からWindows形式への変換を試行
+                                elif path.startswith('/c/'):
+                                    win_path = 'c:\\' + path[3:].replace('/', '\\')
+                                    if Path(win_path).exists():
+                                        js_dirs[key] = win_path
+            except yaml.YAMLError as e:
+                print(f"警告: .kintone.envファイルのYAML解析に失敗しました: {e}")
+
+        # 基本のjavascriptディレクトリを追加
+        js_dirs['base'] = str(self.base_dir / 'javascript')
+
+        # 各ディレクトリからフィールドコードの使用箇所を収集
+        field_codes_by_js_line_map = {}
+        for dir_name, dir_path in js_dirs.items():
+            js_dir = Path(dir_path)
+            if js_dir.exists():
+                print(f"JavaScriptディレクトリを処理中: {dir_name} ({js_dir})")
+                # まず、.js_kaigyo.jsファイルを準備
+                prepare_kaigyo_files(js_dir)
+                dir_field_codes = scan_directory_for_field_codes_with_lines(js_dir)
+                
+                # 結果を統合
+                for field_code, usage_info in dir_field_codes.items():
+                    if field_code not in field_codes_by_js_line_map:
+                        field_codes_by_js_line_map[field_code] = {}
+                    
+                    # ファイル名にディレクトリ名を付加
+                    for js_file, line_numbers in usage_info.items():
+                        new_js_file = f"({dir_name}):{js_file}"
+                        field_codes_by_js_line_map[field_code][new_js_file] = line_numbers
+
+        # 結果をYAMLファイルに保存
         field_codes_yaml_path = self.base_dir / f"{self.appid}_field_codes_usage_at_javascript.yaml"
         with open(field_codes_yaml_path, 'w', encoding='utf-8') as f:
-            yaml.dump( field_codes_by_js_line_map, f, allow_unicode=True, sort_keys=False)
+            yaml.dump(field_codes_by_js_line_map, f, allow_unicode=True, sort_keys=False)
         print(f"フィールドコードのjs内での使用行番号情報を {field_codes_yaml_path} に保存しました。")
+
+        # Excelシートに情報を書き込む
         formatter.set_by_out02_tsv(self.base_dir / f"{self.appid}_layout_structured.tsv")
         ws = formatter.ws
         for row in range(3, ws.max_row + 1):
             field_code_cell = ws.cell(row=row, column=column_index_from_string('BA'))
             field_code = field_code_cell.value
-            if field_code and field_code in  field_codes_by_js_line_map:
-                usage_info =  field_codes_by_js_line_map[field_code]
+            if field_code and field_code in field_codes_by_js_line_map:
+                usage_info = field_codes_by_js_line_map[field_code]
                 usage_text = ""
                 for js_file, line_numbers in usage_info.items():
                     usage_text += f"{js_file}: {', '.join(map(str, line_numbers))}\n"
@@ -1107,11 +1159,12 @@ class KintoneApp:
                 bd_cell.font = formatter.font
        
         # JSファイル別にシートを作成して内容を表示
-        self._create_js_code_sheets(formatter.wb,  field_codes_by_js_line_map)
+        self._create_js_code_sheets(formatter.wb, field_codes_by_js_line_map, js_dirs)
 
-    def _create_js_code_sheets(self, workbook, field_codes_by_js_line_map):
+    def _create_js_code_sheets(self, workbook, field_codes_by_js_line_map, js_dirs):
         """各JSファイルの内容を別シートに表示し、フィールドコードの使用箇所を強調表示する"""
-        js_dir = self.base_dir / 'javascript'
+        # 処理済みのファイルを追跡
+        processed_files = set()
 
         # PropertyFieldMapperを使用してフィールドコードとその表示名の対応を取得
         try:
@@ -1127,117 +1180,146 @@ class KintoneApp:
         light_green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
         dark_green_fill = PatternFill(start_color="C6E0B4", end_color="C6E0B4", fill_type="solid")
 
+        with open('debug_debug.txt', 'a', encoding='utf-8') as f:
+            f.write("-" * 50 + "\n")
+
         # 各JSファイルに対してシートを作成
-        for js_file in js_dir.glob('*.js'):
-            try:
-                # ファイルの内容を読み込む
-                with open(js_file, 'r', encoding='utf-8', errors='replace') as f:
-                    lines = f.readlines()
+        for field_code, usage_info in field_codes_by_js_line_map.items():
+            with open('debug_debug.txt', 'a', encoding='utf-8') as f:
+                f.write(f"field_code: {field_code}    usage_info: {usage_info}\n")
 
-                # シート名はファイル名の右端から31文字以内に設定
-                sheet_name = js_file.name.replace('._kaigyo_.js', '.js')[-31:]
+            for js_file_info, line_numbers in usage_info.items():
+                # ファイル情報を解析
+                dir_name, js_file = js_file_info.split(':', 1)
+                dir_name = dir_name.strip('()')
+                
+                # 既に処理済みのファイルはスキップ
+                if js_file_info in processed_files:
+                    continue
+                processed_files.add(js_file_info)
 
-                # シートが既に存在する場合は削除
-                if sheet_name in workbook.sheetnames:
-                    ws = workbook[sheet_name]
-                    workbook.remove(ws)
+                # ファイルのパスを構築
+                js_dir = Path(js_dirs[dir_name])
+                js_file_path = js_dir / js_file
+                # デバッグ情報をファイルに出力
+                with open('debug_debug.txt', 'a', encoding='utf-8') as f:
+                    f.write(f"js_dir: {js_dir}    js_file: {js_file}  ------------------\n")
 
-                # 新しいシートを作成
-                ws = workbook.create_sheet(sheet_name)
+                try:
+                    # ファイルの内容を読み込む
+                    with open(js_file_path, 'r', encoding='utf-8', errors='replace') as f:
+                        lines = f.readlines()
 
-                # ヘッダー行の設定
-                ws['A1'] = 'ファイル名:'
-                ws['B1'] = js_file.name.replace('._kaigyo_.js', '.js')
-                if '._kaigyo_.' in js_file.name:
-                    ws.merge_cells('C1:D1')
-                    ws['C1'] = f'※ 1行が1000文字を超えている為、適宜改行した {js_file.name} を使用しています。'
-                    ws['C1'].fill = PatternFill(start_color="FFFF0000", end_color="FFFF0000", fill_type="solid")
-                    ws['C1'].font = Font(color="FFFFFF", bold=True)
-                    ws['C1'].alignment = Alignment(vertical='center')
+                    # シート名はファイル名の右端から31文字以内に設定
+                    def replace_chars(s):
+                        return s.replace(':', '_').replace('/', '_').replace('\\', '_')
+                    sheet_name = f"{dir_name}_{replace_chars(js_file)}".replace('._kaigyo_.js', '.js')[-31:]
+                    with open('debug_debug.txt', 'a', encoding='utf-8') as f:
+                        f.write(f"sheet_name: {sheet_name}  ------------------\n")
 
-                # A1, B1に淡い水色の背景色を設定
-                ws['A1'].fill = light_blue_fill
-                ws['B1'].fill = light_blue_fill
+                    # シートが既に存在する場合は削除
+                    if sheet_name in workbook.sheetnames:
+                        ws = workbook[sheet_name]
+                        workbook.remove(ws)
 
-                # テーブルヘッダーの設定
-                ws['A3'] = '行番号'
-                ws['A3'].alignment = Alignment(horizontal='center', vertical='center')
-                ws['B3'] = 'フィールド名'
-                ws['B3'].alignment = Alignment(horizontal='center', vertical='center')
-                ws['C3'] = 'フィールドコード'
-                ws['C3'].alignment = Alignment(horizontal='center', vertical='center')
-                ws['D3'] = 'ソースコード'
-                ws['D3'].alignment = Alignment(horizontal='center', vertical='center')
+                    # 新しいシートを作成
+                    ws = workbook.create_sheet(sheet_name)
 
-                # A3, B3, C3, D3に淡い緑色の背景色を設定
-                ws['A3'].fill = light_green_fill
-                ws['B3'].fill = light_green_fill
-                ws['C3'].fill = light_green_fill
-                ws['D3'].fill = dark_green_fill
+                    # ヘッダー行の設定
+                    ws['A1'] = 'ディレクトリ:'
+                    ws['B1'] = dir_name
+                    ws['C1'] = 'ファイル名:'
+                    ws['D1'] = js_file.replace('._kaigyo_.js', '.js')
+                    if '._kaigyo_.' in js_file:
+                        ws.merge_cells('E1:F1')
+                        ws['E1'] = f'※ 1行が1000文字を超えている為、適宜改行した {js_file} を使用しています。'
+                        ws['E1'].fill = PatternFill(start_color="FFFF0000", end_color="FFFF0000", fill_type="solid")
+                        ws['E1'].font = Font(color="FFFFFF", bold=True)
+                        ws['E1'].alignment = Alignment(vertical='center')
 
-                # 列幅の設定
-                ws.column_dimensions['A'].width = 10
-                ws.column_dimensions['B'].width = 34
-                ws.column_dimensions['C'].width = 34
-                ws.column_dimensions['D'].width = 140
+                    # A1, B1, C1, D1に淡い水色の背景色を設定
+                    for cell in ['A1', 'B1', 'C1', 'D1']:
+                        ws[cell].fill = light_blue_fill
 
-                # 使用されているフィールドコードとその行番号を特定
-                field_usage = {}
-                for field_code, usage_info in field_codes_by_js_line_map.items():
-                    if js_file.name in usage_info:
-                        line_numbers = usage_info[js_file.name]
-                        for line_num in line_numbers:
-                            if line_num <= len(lines):
-                                if line_num not in field_usage:
-                                    field_usage[line_num] = []
-                                try:
-                                    field_name = property_mapper.get_display_key_by_code(field_code)    
-                                except Exception as e:
-                                    field_name = "ERROR"
-                                field_usage[line_num].append((field_name, field_code))
+                    # テーブルヘッダーの設定
+                    ws['A3'] = '行番号'
+                    ws['A3'].alignment = Alignment(horizontal='center', vertical='center')
+                    ws['B3'] = 'フィールド名'
+                    ws['B3'].alignment = Alignment(horizontal='center', vertical='center')
+                    ws['C3'] = 'フィールドコード'
+                    ws['C3'].alignment = Alignment(horizontal='center', vertical='center')
+                    ws['D3'] = 'ソースコード'
+                    ws['D3'].alignment = Alignment(horizontal='center', vertical='center')
 
-                # コードをセルに表示（500行を超える場合は対象行のみ表示）
-                if len(lines) > 500:
-                    # フィールドコードを含む行とその前後10行を特定
-                    target_lines = set()
+                    # A3, B3, C3, D3に淡い緑色の背景色を設定
+                    ws['A3'].fill = light_green_fill
+                    ws['B3'].fill = light_green_fill
+                    ws['C3'].fill = light_green_fill
+                    ws['D3'].fill = dark_green_fill
+
+                    # 列幅の設定
+                    ws.column_dimensions['A'].width = 10
+                    ws.column_dimensions['B'].width = 34
+                    ws.column_dimensions['C'].width = 34
+                    ws.column_dimensions['D'].width = 140
+
+                    # 使用されているフィールドコードとその行番号を特定
+                    field_usage = {}
                     for field_code, usage_info in field_codes_by_js_line_map.items():
-                        if js_file.name in usage_info:
-                            for line_num in usage_info[js_file.name]:
-                                # 前後10行を含める
-                                for i in range(max(1, line_num - 10), min(len(lines) + 1, line_num + 11)):
-                                    target_lines.add(i)
+                        if js_file_info in usage_info:
+                            line_numbers = usage_info[js_file_info]
+                            for line_num in line_numbers:
+                                if line_num <= len(lines):
+                                    if line_num not in field_usage:
+                                        field_usage[line_num] = []
+                                    try:
+                                        field_name = property_mapper.get_display_key_by_code(field_code)    
+                                    except Exception as e:
+                                        field_name = "ERROR"
+                                    field_usage[line_num].append((field_name, field_code))
 
-                    # ソートして順序を保持
-                    target_lines = sorted(target_lines)
-                else:
-                    target_lines = range(1, len(lines) + 1)
+                    # コードをセルに表示（500行を超える場合は対象行のみ表示）
+                    if len(lines) > 500:
+                        # フィールドコードを含む行とその前後10行を特定
+                        target_lines = set()
+                        for field_code, usage_info in field_codes_by_js_line_map.items():
+                            if js_file_info in usage_info:
+                                for line_num in usage_info[js_file_info]:
+                                    # 前後10行を含める
+                                    for i in range(max(1, line_num - 10), min(len(lines) + 1, line_num + 11)):
+                                        target_lines.add(i)
 
-                # 対象行を表示
-                for i, line_num in enumerate(target_lines, 1):
-                    row_num = i + 4  # 5行目から開始
-                    ws[f'A{row_num}'] = line_num
+                        # ソートして順序を保持
+                        target_lines = sorted(target_lines)
+                    else:
+                        target_lines = range(1, len(lines) + 1)
 
-                    if line_num in field_usage:
-                        field_names = []
-                        field_codes = []
-                        for name, code in field_usage[line_num]:
-                            field_names.append(name)
-                            field_codes.append(code)
+                    # 対象行を表示
+                    for i, line_num in enumerate(target_lines, 1):
+                        row_num = i + 4  # 5行目から開始
+                        ws[f'A{row_num}'] = line_num
 
-                        ws[f'B{row_num}'] = '\n'.join(field_names)
-                        ws[f'C{row_num}'] = '\n'.join(field_codes)
+                        if line_num in field_usage:
+                            field_names = []
+                            field_codes = []
+                            for name, code in field_usage[line_num]:
+                                field_names.append(name)
+                                field_codes.append(code)
 
-                    ws[f'D{row_num}'] = lines[line_num-1].rstrip('\n\r')
-                    for col in ['A', 'B', 'C', 'D']:
-                        if ws[f'{col}{row_num}'].value is not None:
-                            ws[f'{col}{row_num}'].font = Font(name='メイリオ', size=9)
-                        ws[f'B{row_num}'].alignment = Alignment(wrap_text=True, vertical='top')
-                        ws[f'C{row_num}'].alignment = Alignment(wrap_text=True, vertical='top')
-                        ws[f'D{row_num}'].alignment = Alignment(wrap_text=False, horizontal='left', vertical='center')
+                            ws[f'B{row_num}'] = '\n'.join(field_names)
+                            ws[f'C{row_num}'] = '\n'.join(field_codes)
 
-                print(f"JSファイル {js_file.name} のシートを作成しました。")
-            except Exception as e:
-                print(f"シート {sheet_name} の作成中にエラーが発生しました: {e}")
+                        ws[f'D{row_num}'] = lines[line_num-1].rstrip('\n\r')
+                        for col in ['A', 'B', 'C', 'D']:
+                            if ws[f'{col}{row_num}'].value is not None:
+                                ws[f'{col}{row_num}'].font = Font(name='メイリオ', size=9)
+                            ws[f'B{row_num}'].alignment = Alignment(wrap_text=True, vertical='top')
+                            ws[f'C{row_num}'].alignment = Alignment(wrap_text=True, vertical='top')
+                            ws[f'D{row_num}'].alignment = Alignment(wrap_text=False, horizontal='left', vertical='center')
+
+                    print(f"JSファイル {js_file_info} のシートを作成しました。")
+                except Exception as e:
+                    print(f"シート {sheet_name} の作成中にエラーが発生しました: {e}")
 
     def _create_settings_sheet(self, workbook):
         """設定情報を新しいシートとして追加"""

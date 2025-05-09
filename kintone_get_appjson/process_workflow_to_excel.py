@@ -571,7 +571,7 @@ def main():
     # Excelファイルの生成
     try:
         result_file = create_workflow_excel(args.app_id, process_data, output_file, app_dir)
-        logger.info(f"プロセスワークフローを {result_file} に出力しました")
+        logger.info(f"プロセスワークフローを {result_file} に出力しました。指定output:{output_file}")
         print(result_file)
     except Exception as e:
         logger.error(f"Excelファイルの生成中にエラーが発生しました: {e}")
