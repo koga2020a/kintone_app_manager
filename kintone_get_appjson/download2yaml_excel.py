@@ -1235,10 +1235,20 @@ class KintoneApp:
 
                     # シートのタブ色を設定
                     ws.sheet_properties.tabColor = "00FF00" if is_base_dir else "0000FF"
+                    # 1行目の高さを30に設定
+                    ws.row_dimensions[1].height = 30
+                    # 1行目のフォントをArialでBoldに設定
+                    """ for cell in ['A1', 'B1', 'C1', 'D1', 'E1', 'F1']:
+                        if cell in ws:
+                            ws[cell].font = Font(name='Arial', bold=True)
+                            ws[cell].alignment = Alignment(vertical='center') """
 
                     # ヘッダー行の設定
-                    ws['A1'] = 'ディレクトリ:'
-                    ws['B1'] = dir_name if is_base_dir else f"({dir_name}){js_dirs[dir_name]}"
+                    ws['A1'] = '基準ディレクトリ:'
+                    ws['B1'] = dir_name if is_base_dir else f"({dir_name}) {js_dirs[dir_name]}"
+                    # B1セルの値がBASE_DIR_NAMEと同じ場合は「アプリのJS」に設定
+                    if dir_name == BASE_DIR_NAME:
+                        ws['B1'] = '【アプリのJS】'
                     ws['C1'] = 'ファイル名:'
                     ws['D1'] = js_file.replace('._kaigyo_.js', '.js')
                     if '._kaigyo_.' in js_file:
