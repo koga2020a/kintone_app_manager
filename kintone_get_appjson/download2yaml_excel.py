@@ -18,6 +18,8 @@ from openpyxl.utils.cell import column_index_from_string, get_column_letter, coo
 from typing import Union
 from urllib.parse import urlparse
 
+BASE_DIR_NAME = '___base___'
+
 # グローバル変数
 EXIT_ON_ERROR = True  # エラー時に終了するかどうかのフラグ
 
@@ -1115,7 +1117,7 @@ class KintoneApp:
                 print(f"警告: .kintone.envファイルのYAML解析に失敗しました: {e}")
 
         # 基本のjavascriptディレクトリを追加
-        js_dirs['base'] = str(self.base_dir / 'javascript')
+        js_dirs[BASE_DIR_NAME] = str(self.base_dir / 'javascript')
 
         # 各ディレクトリからフィールドコードの使用箇所を収集
         field_codes_by_js_line_map = {}
@@ -1213,21 +1215,30 @@ class KintoneApp:
                     # シート名はファイル名の右端から31文字以内に設定
                     def replace_chars(s):
                         return s.replace(':', '_').replace('/', '_').replace('\\', '_')
+                    # シート名を生成 (最大31文字)
                     sheet_name = f"{dir_name}_{replace_chars(js_file)}".replace('._kaigyo_.js', '.js')[-31:]
-                    with open('debug_debug.txt', 'a', encoding='utf-8') as f:
-                        f.write(f"sheet_name: {sheet_name}  ------------------\n")
+                    
+                    # BASE_DIR_NAME で始まるかどうかのフラグ
+                    is_base_dir = sheet_name.startswith(BASE_DIR_NAME)
+                    
+                    # BASE_DIR_NAME で始まる場合はプレフィックスを削除
+                    use_sheet_name = sheet_name
+                    if is_base_dir:
+                        use_sheet_name = sheet_name[len(BASE_DIR_NAME + '_'):]
+                    else:
+                        use_sheet_name = f"({sheet_name.split('_')[0]}){sheet_name[sheet_name.find('_')+1:]}" if '_' in sheet_name else sheet_name
 
-                    # シートが既に存在する場合は削除
-                    if sheet_name in workbook.sheetnames:
-                        ws = workbook[sheet_name]
-                        workbook.remove(ws)
+                    # 既存のシートを削除して新規作成
+                    if use_sheet_name in workbook.sheetnames:
+                        workbook.remove(workbook[use_sheet_name])
+                    ws = workbook.create_sheet(use_sheet_name)
 
-                    # 新しいシートを作成
-                    ws = workbook.create_sheet(sheet_name)
+                    # シートのタブ色を設定
+                    ws.sheet_properties.tabColor = "00FF00" if is_base_dir else "0000FF"
 
                     # ヘッダー行の設定
                     ws['A1'] = 'ディレクトリ:'
-                    ws['B1'] = dir_name
+                    ws['B1'] = dir_name if is_base_dir else f"({dir_name}){js_dirs[dir_name]}"
                     ws['C1'] = 'ファイル名:'
                     ws['D1'] = js_file.replace('._kaigyo_.js', '.js')
                     if '._kaigyo_.' in js_file:
