@@ -496,12 +496,28 @@ class ExcelExporter:
     def px_to_char(px):
         return px / 7
 
-    # ヘッダー行の基本スタイル
+    # 共通スタイル定数
+    thin_side = Side(style='thin', color='000000')
+    thin_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    default_font = Font(size=12)
+    admin_font = Font(bold=True, size=12)
+
     header_fill = PatternFill(start_color='243C5C', end_color='243C5C', fill_type='solid')
-    header_font = Font(bold=True, color='FFFFFF')
-    
-    # 列F～Iのヘッダー背景色
+    header_font = Font(bold=True, color='FFFFFF', size=12)
     fg_fill = PatternFill(start_color='4C5D3C', end_color='4C5D3C', fill_type='solid')
+    group_col_header_fill = PatternFill(start_color='5B9BD5', end_color='5B9BD5', fill_type='solid')
+    disabled_fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+
+    discrepancy_styles = {
+        '相違': (
+            PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid'),
+            Font(size=12, color='FF0000'),
+        ),
+        '大小相違': (
+            PatternFill(start_color='FFEB9C', end_color='FFEB9C', fill_type='solid'),
+            Font(size=12, color='000000'),
+        ),
+    }
 
     wb = load_workbook(self.output_file)
     sheets = ['アクティブ', '停止中']
@@ -575,12 +591,18 @@ class ExcelExporter:
       self.logger.info(f"{sheet}シートのフォーマットを設定中...")
       ws = wb[sheet]
 
-      # ヘッダー行（1行目）の各セルに背景色とフォントを設定（A～I列）
-      for col in [COLUMN_USER_ID, COLUMN_DISCREPANCY, COLUMN_STATUS, COLUMN_LOGIN_NAME,
-                  COLUMN_NAME, COLUMN_EMAIL, COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE, COLUMN_GROUPS]:
+      basic_header_cols = [
+          COLUMN_USER_ID, COLUMN_DISCREPANCY, COLUMN_STATUS, COLUMN_LOGIN_NAME,
+          COLUMN_NAME, COLUMN_EMAIL, COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE, COLUMN_GROUPS
+      ]
+
+      # ヘッダー行（1行目）A～I列
+      for col in basic_header_cols:
           cell = ws[f'{col}1']
           cell.fill = header_fill
           cell.font = header_font
+          cell.border = thin_border
+          cell.alignment = Alignment(horizontal='center', vertical='center')
 
       # 列幅の設定（ピクセル値を文字数に変換）
       column_widths_px = {
@@ -597,22 +619,33 @@ class ExcelExporter:
       for col, px in column_widths_px.items():
           ws.column_dimensions[col].width = px_to_char(px)
 
-      # グループごとの列をJ列以降に設定（幅は15）
-      start_col_letter = 'J'
-      start_col_num = column_index_from_string(start_col_letter)
+      # グループごとの列をJ列以降に設定（幅・ヘッダー装飾）
+      start_col_num = column_index_from_string('J')
       for i, group in enumerate(self.group_names, start=start_col_num):
           col_letter = get_column_letter(i)
           ws.column_dimensions[col_letter].width = 15
+          cell = ws[f'{col_letter}1']
+          cell.fill = group_col_header_fill
+          cell.font = header_font
+          cell.border = thin_border
+          cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-      # 列F～I（メールアドレス、最終アクセス日、経過日数、所属グループ一覧）のヘッダーに別背景色を設定
+      # 列F～Iのヘッダーに別背景色を設定
       for col_letter in [COLUMN_EMAIL, COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE, COLUMN_GROUPS]:
           cell = ws[f'{col_letter}1']
           cell.fill = fg_fill
 
-      # データ行（2行目以降）のセル配置を設定
+      # データ行（2行目以降）のセル配置・フォント・罫線
       exclude_columns = [COLUMN_LOGIN_NAME, COLUMN_NAME, COLUMN_EMAIL]
+      discrepancy_col_idx = column_index_from_string(COLUMN_DISCREPANCY) - 1
       for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+          if sheet == '停止中':
+              for cell in row:
+                  cell.fill = disabled_fill
+
           for cell in row:
+              cell.font = default_font
+              cell.border = thin_border
               if cell.column_letter in [COLUMN_USER_ID, COLUMN_DISCREPANCY, COLUMN_STATUS,
                                         COLUMN_LAST_ACCESS, COLUMN_DAYS_SINCE]:
                   cell.alignment = Alignment(horizontal='center', vertical='center')
@@ -621,6 +654,12 @@ class ExcelExporter:
               else:
                   cell.alignment = Alignment(horizontal='center', vertical='center')
 
+          discrepancy_cell = row[discrepancy_col_idx]
+          if discrepancy_cell.value in discrepancy_styles:
+              fill, font = discrepancy_styles[discrepancy_cell.value]
+              discrepancy_cell.fill = fill
+              discrepancy_cell.font = font
+
       # 「Administrators」グループに所属している場合は、氏名（E列）を太字にする
       for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
           group_cell = row[column_index_from_string(COLUMN_GROUPS) - 1]
@@ -628,7 +667,7 @@ class ExcelExporter:
               groups = [g.strip() for g in group_cell.value.split(',')]
               if 'Administrators' in groups:
                   name_cell = row[column_index_from_string(COLUMN_NAME) - 1]
-                  name_cell.font = Font(bold=True)
+                  name_cell.font = admin_font
 
       # 所属グループ一覧内に「Administrators」が含まれている場合は除去
       for row in ws.iter_rows(min_row=2, min_col=column_index_from_string(COLUMN_GROUPS),
@@ -671,7 +710,7 @@ class ExcelExporter:
         
         # ドメイン一覧のフォーマット
         domain_title_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
-        domain_title_font = Font(bold=True, color='FFFFFF')
+        domain_title_font = Font(bold=True, color='FFFFFF', size=12)
         
         # ドメイン一覧ヘッダー
         ws.cell(row=1, column=1).fill = domain_title_fill
@@ -680,12 +719,12 @@ class ExcelExporter:
         # ドメイン一覧のヘッダー行
         ws.cell(row=2, column=1).fill = PatternFill(start_color='D9E1F2', end_color='D9E1F2', fill_type='solid')
         ws.cell(row=2, column=2).fill = PatternFill(start_color='D9E1F2', end_color='D9E1F2', fill_type='solid')
-        ws.cell(row=2, column=1).font = Font(bold=True)
-        ws.cell(row=2, column=2).font = Font(bold=True)
+        ws.cell(row=2, column=1).font = Font(bold=True, size=12)
+        ws.cell(row=2, column=2).font = Font(bold=True, size=12)
         
-        # ドメインごとの色を設定
+        # ドメインごとの色を設定（固定 seed で再現性を確保）
         domain_to_color = {}
-        generated_colors = generate_similar_colors(len(self.domain_list))
+        generated_colors = generate_similar_colors(len(self.domain_list), seed=42)
         for i, domain in enumerate(self.domain_list):
             cell = ws.cell(row=3+i, column=1)
             color_cell = ws.cell(row=3+i, column=2)
@@ -696,19 +735,19 @@ class ExcelExporter:
                 color_sample = PatternFill(start_color=color, end_color=color, fill_type='solid')
                 color_cell.fill = color_sample
             
-            cell.font = Font(bold=True)
+            cell.font = Font(bold=True, size=12)
+            color_cell.font = default_font
             
             # 罫線を追加
-            border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
-            cell.border = border
-            color_cell.border = border
+            cell.border = thin_border
+            color_cell.border = thin_border
         
         # 背景・フォント設定（グループ情報用）
         group_title_fill = PatternFill(start_color='5B9BD5', end_color='5B9BD5', fill_type='solid')
-        group_title_font = Font(bold=True, color='FFFFFF')
+        group_title_font = Font(bold=True, color='FFFFFF', size=12)
         
-        header_fill = PatternFill(start_color='243C5C', end_color='243C5C', fill_type='solid')
-        header_font = Font(bold=True, color='FFFFFF')
+        gi_header_fill = PatternFill(start_color='243C5C', end_color='243C5C', fill_type='solid')
+        gi_header_font = Font(bold=True, color='FFFFFF', size=12)
         
         # 枠線（太線）の設定
         thick_side = Side(border_style='thick', color="000000")
@@ -719,66 +758,69 @@ class ExcelExporter:
             cell_val = ws.cell(row=row, column=1).value
             if isinstance(cell_val, str) and cell_val.startswith("グループ:"):
                 block_start = row
-                # グループ名行の背景設定（E列まで）
-                for col in range(1, 6):  # A～E列のみ
+                # グループ名行の背景設定（A～F列）
+                for col in range(1, 7):
                     cell = ws.cell(row=row, column=col)
                     cell.fill = group_title_fill
                     cell.font = group_title_font
+                    cell.border = thin_border
                 row += 1
                 
                 # ヘッダー行の背景設定
                 if row <= ws.max_row and ws.cell(row=row, column=1).value == "ユーザーID":
                     # A～E列は通常の青系の背景色
-                    for col in range(1, 6):  # A～E列
+                    for col in range(1, 6):
                         cell = ws.cell(row=row, column=col)
-                        cell.fill = header_fill
-                        cell.font = header_font
-                        cell.alignment = Alignment(horizontal='center')
+                        cell.fill = gi_header_fill
+                        cell.font = gi_header_font
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                        cell.border = thin_border
                     
                     # F列（所属グループ一覧）は緑系の背景色
                     group_list_fill = PatternFill(start_color='4C5D3C', end_color='4C5D3C', fill_type='solid')
-                    cell = ws.cell(row=row, column=6)  # F列
+                    cell = ws.cell(row=row, column=6)
                     cell.fill = group_list_fill
-                    cell.font = header_font
-                    cell.alignment = Alignment(horizontal='center')
+                    cell.font = gi_header_font
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                    cell.border = thin_border
                     row += 1
                 else:
                     continue
                 
                 # セットのデータ行の最終行を検出
-                data_start = row
                 while row <= ws.max_row and ws.cell(row=row, column=1).value not in [None, ""]:
+                    for col in range(1, 7):
+                        data_cell = ws.cell(row=row, column=col)
+                        data_cell.font = default_font
+                        data_cell.border = thin_border
+
                     # D列（メールアドレス）を右寄せに
                     email_cell = ws.cell(row=row, column=4)
-                    email_cell.alignment = Alignment(horizontal='right')
+                    email_cell.alignment = Alignment(horizontal='right', vertical='center')
                     
-                    # E列が「●」のとき、B列の背景色を薄いグレーに設定
+                    # E列が「●」のとき、A～F列を行全体グレーに設定
                     if ws.cell(row=row, column=5).value == '●':
-                        b_cell = ws.cell(row=row, column=2)
-                        b_cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
-                    
-                    # メールアドレスに基づいてセルの背景色を設定
-                    if email_cell.value:
+                        for col in range(1, 7):
+                            ws.cell(row=row, column=col).fill = disabled_fill
+                    elif email_cell.value:
                         email_value = email_cell.value
                         domain = email_value.split('@')[-1] if '@' in email_value else ''
-                        
-                        # メインドメイン以外のドメインの場合のみ背景色を設定
                         if domain in domain_to_color and domain != self.user_domain:
                             color = domain_to_color[domain]
                             email_cell.fill = PatternFill(start_color=color, end_color=color, fill_type='solid')
                     
                     # 停止中列を中央揃えに
-                    ws.cell(row=row, column=5).alignment = Alignment(horizontal='center')
+                    ws.cell(row=row, column=5).alignment = Alignment(horizontal='center', vertical='center')
                     row += 1
                 block_end = row - 1
                 
-                # ブロック全体に太線の枠線を設定（E列まで）
+                # ブロック全体に太線の枠線を設定（A～F列）
                 for r in range(block_start, block_end + 1):
-                    for c in range(1, 6):  # A～E列のみ
+                    for c in range(1, 7):
                         cell = ws.cell(row=r, column=c)
                         new_border = Border(
                             left=thick_side if c == 1 else cell.border.left,
-                            right=thick_side if c == 5 else cell.border.right,
+                            right=thick_side if c == 6 else cell.border.right,
                             top=thick_side if r == block_start else cell.border.top,
                             bottom=thick_side if r == block_end else cell.border.bottom
                         )
