@@ -241,6 +241,60 @@ def _prompt_app_id(optional=True):
         print("  数字で入力してください。")
 
 
+def _load_app_id_list():
+    """.kintone.env の app_tokens からアプリID一覧を取得する。
+
+    設定ファイルが無い・読めない場合は空リストを返す（メニューを止めない）。
+    """
+    try:
+        config = load_env_config(ENV_FILE)
+    except SystemExit:
+        # load_env_config はファイル不在などで sys.exit する。メニューでは握りつぶす。
+        return []
+    except Exception:
+        return []
+    tokens = config.get("app_tokens") or {}
+    # キーは数値/文字列が混在し得るため、文字列に揃えて返す（定義順を維持）
+    return [str(k) for k in tokens.keys()]
+
+
+def _prompt_app_ids_to_refresh():
+    """アプリ一覧を番号付きで表示し、カンマ区切りで選んだアプリIDのリストを返す。
+
+    空Enterは全件選択。対象が無い・有効な選択が無い場合は None を返す。
+    """
+    app_ids = _load_app_id_list()
+    if not app_ids:
+        print("\n  .kintone.env の app_tokens にアプリが定義されていません。")
+        return None
+
+    print("\n  対象アプリ一覧:")
+    for i, app_id in enumerate(app_ids, 1):
+        print(f"  {i:>3}. アプリID {app_id}")
+
+    raw = _prompt_line("  最新化する番号（カンマ区切り、空Enter=全件）", default=None)
+    if not raw:
+        return app_ids
+
+    selected = []
+    for part in (p.strip() for p in raw.split(",")):
+        if not part:
+            continue
+        if not part.isdigit():
+            print(f"  無効な番号としてスキップ: {part}")
+            continue
+        idx = int(part)
+        if 1 <= idx <= len(app_ids):
+            selected.append(app_ids[idx - 1])
+        else:
+            print(f"  範囲外の番号としてスキップ: {idx}")
+
+    # 重複を除去しつつ選択順を維持
+    seen = set()
+    result = [x for x in selected if not (x in seen or seen.add(x))]
+    return result or None
+
+
 def _show_main_menu():
     """メインメニューを表示する。"""
     _enable_console_color()
@@ -255,22 +309,11 @@ def _show_main_menu():
     else:
         print(f"\n  設定: {ENV_FILE.name}")
     print()
-    print("【データ出力】")
+    print("【標準メニュー】")
     print(f"  1. {_purple('ユーザー・グループ一覧 → Excel/CSV')}     users")
-    print("  2. アプリ設定 JSON を取得                 app")
-    print("  3. ACL レポート → Excel                   acl")
-    print("  4. アプリ設定一覧表 → Excel               summary")
-    print("  5. 通知設定 → Excel                       notifications")
-    print("  6. 上記をまとめて一括実行                 all")
+    print("  2. 全情報取得：ユーザー＋アプリ（mode選択） acquire")
     print()
-    print("【グループ操作】")
-    print("  7. グループ一覧を表示                     group list")
-    print("  8. ユーザーを検索                         group search")
-    print("  9. ユーザーをグループに追加               group add")
-    print(" 10. ユーザーをグループから削除             group remove")
-    print()
-    print("【その他】")
-    print(" 11. 出力ファイルの説明を見る               outputs")
+    print("  d. 詳細メニュー（その他の機能）")
     print("  h. コマンド一覧（ヘルプ）")
     print("  0. 終了")
     print()
@@ -279,10 +322,39 @@ def _show_main_menu():
     print()
 
 
+def _show_detail_menu():
+    """詳細メニュー（標準の2項目以外の機能）を表示する。"""
+    print()
+    print("-" * 52)
+    print("  詳細メニュー")
+    print("-" * 52)
+    print()
+    print("【グループ操作】")
+    print("  1. グループ一覧を表示                     group list")
+    print("  2. ユーザーを検索                         group search")
+    print("  3. ユーザーをグループに追加               group add")
+    print("  4. ユーザーをグループから削除             group remove")
+    print()
+    print("【アプリ設定の調査・出力】")
+    print("  5. アプリ設定 JSON を取得                 app")
+    print("  6. ACL レポート → Excel                   acl")
+    print("  7. アプリ設定一覧表 → Excel               summary")
+    print("  8. 通知設定 → Excel                       notifications")
+    print("  9. 選択したアプリを最新化（app 再取得）   app --id ...")
+    print()
+    print("【一括実行・その他】")
+    print(" 10. 上記をまとめて一括実行                 all")
+    print(" 11. 出力ファイルの説明を見る               outputs")
+    print()
+    print("  b. 標準メニューに戻る")
+    print("  0. 終了")
+    print()
+
+
 def build_argv_from_menu():
     """
-    番号選択メニューから sys.argv 相当の引数リストを組み立てる。
-    終了選択時は None を返す。
+    番号選択メニュー（標準）から sys.argv 相当の引数リストを組み立てる。
+    終了選択時は None を返す。詳細メニューへは 'd' で遷移する。
     """
     _show_main_menu()
     while True:
@@ -296,6 +368,12 @@ def build_argv_from_menu():
             return None
         if choice == "h":
             return ["__SHOW_HELP__"]
+        if choice == "d":
+            result = _build_argv_from_detail_menu()
+            if result == "__BACK__":
+                _show_main_menu()
+                continue
+            return result  # argv または None（終了）
 
         argv = ["menu.py"]
 
@@ -307,30 +385,102 @@ def build_argv_from_menu():
                 argv.extend(["--format", "csv"])
 
         elif choice == "2":
+            # ユーザー＋アプリ全情報をまとめて取得。最後に実行モードを選択する。
+            app_ids = _prompt_app_ids_to_refresh()
+            print("\n  実行の種類: 1=ダウンロードのみ  2=Excel再生成のみ  3=両方")
+            mode_sel = _prompt_line("  選択", default="3")
+            mode = {"1": "download", "2": "excel", "3": "both"}.get(mode_sel, "both")
+            argv.append("acquire")
+            argv.extend(["--mode", mode])
+            if app_ids:
+                argv.append("--id")
+                argv.extend(str(a) for a in app_ids)
+
+        else:
+            print("  1、2、d、h、0 のいずれかを入力してください。\n")
+            continue
+
+        print(f"\n  実行: python {' '.join(argv[1:])}\n")
+        return argv
+
+
+def _build_argv_from_detail_menu():
+    """
+    詳細メニューから sys.argv 相当の引数リストを組み立てる。
+    終了選択時は None、標準メニューに戻る場合は "__BACK__" を返す。
+    """
+    _show_detail_menu()
+    while True:
+        try:
+            choice = input("番号を入力してください > ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\n終了します。")
+            return None
+        if choice in ("0", "q", "quit", "exit"):
+            print("終了します。")
+            return None
+        if choice in ("b", "back"):
+            return "__BACK__"
+
+        argv = ["menu.py"]
+
+        # 【グループ操作】
+        if choice == "1":
+            argv.extend(["group", "list"])
+
+        elif choice == "2":
+            argv.extend(["group", "search"])
+            keyword = _prompt_line("  検索キーワード", required=True)
+            argv.append(keyword)
+
+        elif choice == "3":
+            argv.extend(["group", "add"])
+            user = _prompt_line("  ユーザーコード", required=True)
+            group = _prompt_line("  グループ名またはコード", required=True)
+            argv.extend([user, group])
+
+        elif choice == "4":
+            argv.extend(["group", "remove"])
+            user = _prompt_line("  ユーザーコード", required=True)
+            argv.append(user)
+
+        # 【アプリ設定の調査・出力】
+        elif choice == "5":
             argv.append("app")
             app_id = _prompt_app_id(optional=True)
             if app_id is not None:
                 argv.extend(["--id", str(app_id)])
 
-        elif choice == "3":
+        elif choice == "6":
             argv.append("acl")
             app_id = _prompt_app_id(optional=True)
             if app_id is not None:
                 argv.extend(["--id", str(app_id)])
 
-        elif choice == "4":
+        elif choice == "7":
             argv.append("summary")
             output = _prompt_line("  出力ファイル名（空Enter=自動）", default=None)
             if output:
                 argv.extend(["--output", output])
 
-        elif choice == "5":
+        elif choice == "8":
             argv.append("notifications")
             app_id = _prompt_app_id(optional=True)
             if app_id is not None:
                 argv.extend(["--id", str(app_id)])
 
-        elif choice == "6":
+        elif choice == "9":
+            # 番号付き一覧から選んだアプリの app 取得を再実行（最新化）
+            app_ids = _prompt_app_ids_to_refresh()
+            if not app_ids:
+                print("  最新化対象が選択されませんでした。\n")
+                continue
+            argv.append("app")
+            argv.append("--id")
+            argv.extend(str(a) for a in app_ids)
+
+        # 【一括実行・その他】
+        elif choice == "10":
             argv.append("all")
             print("\n  対象アプリ: 1=全アプリ  2=指定IDのみ  3=指定IDを除外")
             scope = _prompt_line("  選択", default="1")
@@ -341,30 +491,11 @@ def build_argv_from_menu():
                 ids = _prompt_line("  除外するアプリID（カンマ区切り）", required=True)
                 argv.extend(["--not-id"] + [x.strip() for x in ids.split(",") if x.strip()])
 
-        elif choice == "7":
-            argv.extend(["group", "list"])
-
-        elif choice == "8":
-            argv.extend(["group", "search"])
-            keyword = _prompt_line("  検索キーワード", required=True)
-            argv.append(keyword)
-
-        elif choice == "9":
-            argv.extend(["group", "add"])
-            user = _prompt_line("  ユーザーコード", required=True)
-            group = _prompt_line("  グループ名またはコード", required=True)
-            argv.extend([user, group])
-
-        elif choice == "10":
-            argv.extend(["group", "remove"])
-            user = _prompt_line("  ユーザーコード", required=True)
-            argv.append(user)
-
         elif choice == "11":
             argv.append("outputs")
 
         else:
-            print("  1〜11、h、0 のいずれかを入力してください。\n")
+            print("  1〜11、b、0 のいずれかを入力してください。\n")
             continue
 
         print(f"\n  実行: python {' '.join(argv[1:])}\n")
@@ -527,11 +658,13 @@ def get_user_group_info_direct(config, logger, output_format="pickle"):
         return False
 
 # アプリのJSONデータ取得
-def get_app_json(config, logger, app_id=None):
+def get_app_json(config, logger, app_id=None, mode='both'):
     """
     kintone_get_appjson の機能を呼び出してアプリのJSONデータを取得
+
+    mode: 'download'=取得のみ / 'excel'=既存データからExcel再生成のみ / 'both'=両方
     """
-    logger.info("アプリのJSONデータ取得を開始します")
+    logger.info(f"アプリのJSONデータ取得を開始します（mode={mode}）")
     
     script_path = APPJSON_DIR / "download2yaml_excel.py"
     
@@ -570,11 +703,12 @@ def get_app_json(config, logger, app_id=None):
             api_token,
             config["subdomain"],
             config["username"],
-            config["password"]
+            config["password"],
+            mode
         ]
-        
+
         try:
-            logger.info(f"実行コマンド: python {script_path} {app_id} ****** {config['subdomain']} {config['username']} ********")
+            logger.info(f"実行コマンド: python {script_path} {app_id} ****** {config['subdomain']} {config['username']} ******** {mode}")
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
             print(result.stdout) # デバッグ用
             logger.info(f"アプリID {app_id} のJSONデータを取得しました")
@@ -605,11 +739,12 @@ def get_app_json(config, logger, app_id=None):
                 api_token,
                 config["subdomain"],
                 config["username"],
-                config["password"]
+                config["password"],
+                mode
             ]
-            
+
             try:
-                logger.info(f"実行コマンド: python {script_path} {app_id} ****** {config['subdomain']} {config['username']} ********")
+                logger.info(f"実行コマンド: python {script_path} {app_id} ****** {config['subdomain']} {config['username']} ******** {mode}")
                 result = subprocess.run(cmd, check=True, capture_output=True, text=True)
                 print(result.stdout) # デバッグ用
                 logger.info(f"アプリID {app_id} のJSONデータを取得しました")
@@ -1075,7 +1210,7 @@ def main():
     
     # アプリJSON取得コマンド
     app_json_parser = subparsers.add_parser('app', help='アプリのJSONデータを取得（出力: [アプリID]_app_settings.json, [アプリID]_form_layout.json など）')
-    app_json_parser.add_argument('--id', type=int, help='取得するアプリID')
+    app_json_parser.add_argument('--id', type=int, nargs='+', help='取得するアプリID（複数指定可。省略時は全アプリ）')
     
     # ACL Excel生成コマンド
     acl_excel_parser = subparsers.add_parser('acl', help='アプリのACL情報をExcelに変換（出力: acl_report_[アプリID]_[日時].xlsx）')
@@ -1109,6 +1244,12 @@ def main():
     notifications_parser = subparsers.add_parser('notifications', help='アプリの通知設定をExcelに変換（出力: [アプリID]_notifications.xlsx）')
     notifications_parser.add_argument('--id', type=int, help='変換するアプリID')
     
+    # 全情報取得コマンド（ユーザー＋アプリをまとめて取得・Excel化）
+    acquire_parser = subparsers.add_parser('acquire', help='ユーザー＋アプリの全情報を取得しExcel化（modeで取得/Excel再生成を選択）')
+    acquire_parser.add_argument('--id', type=int, nargs='+', help='対象アプリID（複数指定可。省略時は全アプリ）')
+    acquire_parser.add_argument('--mode', choices=['download', 'excel', 'both'], default='both',
+                                help='download=取得のみ / excel=Excel再生成のみ / both=両方（既定）')
+
     # 全機能実行コマンド
     all_parser = subparsers.add_parser('all', help='すべての機能を順番に実行（複数の出力ファイルが生成されます）')
     all_parser.add_argument('--id', type=int, nargs='+', help='対象とするアプリID（指定したIDのみ処理）')
@@ -1161,11 +1302,12 @@ def main():
                 logger.warning("エラーが発生しましたが、処理を続行します。一部のファイルが正しく処理されない可能性があります。")
                 print(f"警告: ディレクトリの準備中にエラーが発生しました: {e}")
                 print("処理を続行しますが、一部のファイルが正しく処理されない可能性があります。")
-    # appコマンドの場合、特定のアプリIDのディレクトリのみ準備
+    # appコマンドの場合、指定された各アプリIDのディレクトリのみ準備
     elif args.command == 'app' and args.id:
         logger.info(f"アプリID {args.id} のディレクトリ準備を開始します")
         try:
-            prepare_app_directories(args.id)
+            for app_id in args.id:
+                prepare_app_directories(app_id)
         except Exception as e:
             logger.error(f"ディレクトリの準備中にエラーが発生しました: {e}")
             # Excelファイルが開かれているかどうかを確認
@@ -1232,20 +1374,79 @@ def main():
             sys.exit(1)
             
     elif args.command == 'app':
-        result = get_app_json(config, logger, args.id)
-        if result:
-            print("アプリのJSONデータ取得が完了しました")
-            
-            # appコマンドで特定のアプリIDが指定された場合、事後処理も実行
-            if args.id:
-                # 処理完了後にバックアップを作成
+        if args.id:
+            # 指定された各アプリIDを順に最新化（app 再取得）
+            for app_id in args.id:
+                print(f"\n=== アプリID {app_id} を最新化します ===")
+                if get_app_json(config, logger, app_id):
+                    print(f"アプリID {app_id} のJSONデータ取得が完了しました")
+                else:
+                    print(f"アプリID {app_id} の取得に失敗しました")
+
+            # 全アプリの処理後にバックアップと日時部分の除去をまとめて実行
+            backup_dir = backup_output()
+            logger.info(f"出力ファイルを {backup_dir} にバックアップしました")
+            print(f"出力ファイルを {backup_dir} にバックアップしました")
+            remove_datetime_suffix(OUTPUT_DIR)
+        else:
+            # アプリID未指定時は全アプリを取得
+            if get_app_json(config, logger, None):
+                print("アプリのJSONデータ取得が完了しました")
+
+    elif args.command == 'acquire':
+        # ユーザー＋アプリの全情報をまとめて取得・Excel化する
+        mode = args.mode
+        logger.info(f"統合取得（acquire）を開始します（mode={mode}）")
+        print(f"\n##### 全情報取得を開始します（mode={mode}） #####")
+
+        # 1. ユーザー・グループ（取得とExcel化が一体のため mode に関わらず実行）
+        if mode == 'excel':
+            print("※ ユーザー・グループは取得とExcel化が一体のため、Excel再生成のみモードでもAPI取得を伴います。")
+        print("\n--- ユーザー・グループ情報 ---")
+        if get_user_group_info(config, logger):
+            print("ユーザー・グループ情報の取得が完了しました")
+        else:
+            print("ユーザー・グループ情報の取得に失敗しました")
+        if KINTONE_USERLIB_AVAILABLE:
+            if get_user_group_info_direct(config, logger):
+                print("ユーザー・グループ情報（直接取得）が完了しました")
+
+        # 2. 対象アプリの決定（--id 未指定なら app_tokens の全アプリ）
+        app_tokens = config.get('app_tokens', {})
+        if args.id:
+            target_ids = [str(i) for i in args.id]
+        else:
+            target_ids = [str(k) for k in app_tokens.keys()]
+
+        if not target_ids:
+            print("\n対象アプリが定義されていません（.kintone.env の app_tokens を確認してください）。")
+        else:
+            for app_id in target_ids:
+                # download/both のときは既存出力を previous_output へ退避してから取得
+                if mode != 'excel':
+                    try:
+                        prepare_app_directories(app_id)
+                    except Exception as e:
+                        logger.error(f"ディレクトリの準備中にエラーが発生しました: {e}")
+                        if "~$" in str(e):
+                            print("エラー: Excelファイルが開かれているため処理を続行できません。")
+                            print("Excelファイルを閉じてから再実行してください。")
+                            sys.exit(1)
+                        print(f"警告: ディレクトリの準備中にエラーが発生しました: {e}")
+
+                print(f"\n--- アプリID {app_id}（mode={mode}） ---")
+                if get_app_json(config, logger, app_id, mode=mode):
+                    print(f"アプリID {app_id} の処理が完了しました")
+                else:
+                    print(f"アプリID {app_id} の処理に失敗しました")
+
+            # download/both のときのみ後処理（バックアップ＋日時部分の除去）
+            if mode != 'excel':
                 backup_dir = backup_output()
                 logger.info(f"出力ファイルを {backup_dir} にバックアップしました")
-                print(f"出力ファイルを {backup_dir} にバックアップしました")
-                
-                # ファイル名から日時部分を除去
+                print(f"\n出力ファイルを {backup_dir} にバックアップしました")
                 remove_datetime_suffix(OUTPUT_DIR)
-            
+
     elif args.command == 'acl':
         result = generate_acl_excel(config, logger, args.id)
         if result:
@@ -1393,17 +1594,7 @@ def main():
                     print(f"- {file}")
             else:
                 print(f"通知設定を {notifications_result} に出力しました")
-        
-        # 6. 通知設定のExcel変換
-        notifications_result = generate_notifications_excel(config, logger)
-        if notifications_result:
-            if isinstance(notifications_result, list):
-                print("以下のファイルに通知設定を出力しました:")
-                for file in notifications_result:
-                    print(f"- {file}")
-            else:
-                print(f"通知設定を {notifications_result} に出力しました")
-    
+
     # allコマンドの場合のみバックアップと日時部分の除去を実行
     if args.command == 'all':
         # 処理完了後にバックアップを作成

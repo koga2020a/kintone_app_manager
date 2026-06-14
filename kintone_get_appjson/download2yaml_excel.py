@@ -767,18 +767,51 @@ class PropertyFieldMapper:
 
 # ─── KintoneApp クラス ─────────────────────────────────────────────
 class KintoneApp:
-    def __init__(self, appid, api_token=None, subdomain=None, username=None, password=None, config_path='config_UserAccount.yaml'):
+    def __init__(self, appid, api_token=None, subdomain=None, username=None, password=None, config_path='config_UserAccount.yaml', mode='both'):
         self.appid = appid
+        # 実行モード: 'download'=取得のみ / 'excel'=既存データからExcel再生成のみ / 'both'=両方
+        self.mode = mode
         config = self.load_config(config_path)
         self.subdomain = subdomain or config.get('subdomain')
         self.username = username or config.get('username')
         self.password = password or config.get('password')
         self.api_token = api_token or config.get('api_token')
-        if not all([self.subdomain, self.username, self.password]):
+        # excel(再生成のみ)モードはネットアクセス不要なので認証情報は必須としない
+        if self.mode != 'excel' and not all([self.subdomain, self.username, self.password]):
             print("Error: 認証情報が不足しています。コマンドライン引数または設定ファイルで指定してください。")
             sys.exit(1)
-        self.app_name = self.get_app_name_by_settings()
-        self.base_dir, self.js_dir, self.json_dir = self.create_directory_structure()
+
+        if self.mode == 'excel':
+            # 既存のダウンロード結果を探して、それを使ってExcelだけ再生成する
+            located = self.locate_existing_directory()
+            if not located:
+                print(f"Error: アプリID {appid} の既存ダウンロード結果が見つかりません。先にダウンロードを実行してください。")
+                sys.exit(1)
+            self.base_dir, self.js_dir, self.json_dir = located
+            self.app_name = self.base_dir.name
+            print(f"既存ディレクトリを使用してExcelを再生成します: {self.base_dir}")
+        else:
+            self.app_name = self.get_app_name_by_settings()
+            self.base_dir, self.js_dir, self.json_dir = self.create_directory_structure()
+
+    def locate_existing_directory(self):
+        """excelモード用: output/ または previous_output/ から該当アプリの
+        最新ダウンロード結果ディレクトリ（<appid>_...）を探して返す。
+
+        Returns:
+            (base_dir, js_dir, json_dir) のタプル、見つからなければ None
+        """
+        pattern = re.compile(rf'^{re.escape(str(self.appid))}_')
+        candidates = []
+        for base in (Path('./output'), Path('./previous_output')):
+            if base.exists():
+                for d in base.iterdir():
+                    if d.is_dir() and pattern.match(d.name):
+                        candidates.append(d)
+        if not candidates:
+            return None
+        latest = max(candidates, key=lambda p: p.stat().st_mtime)
+        return latest, latest / 'javascript', latest / 'json'
 
     def load_config(self, config_path):
         try:
@@ -850,7 +883,15 @@ class KintoneApp:
 
     def download_file(self, file_key, file_name, js_info):
         url = f"https://{self.subdomain}.cybozu.com/k/v1/file.json?fileKey={file_key}"
-        headers = {"X-Cybozu-API-Token": self.api_token}
+        # 【重要】カスタマイズJS/CSSのダウンロードはパスワード認証（X-Cybozu-Authorization）必須。
+        #   kintone のファイルダウンロードAPI(/k/v1/file.json)は、APIトークン認証では
+        #   「レコードの添付ファイルフィールドのファイル」しか取得できない。
+        #   app/customize.json から得た fileKey はレコードに紐づかないため、
+        #   APIトークンではダウンロードできず権限エラー(GAIA)になる。
+        #   そのため customize 情報取得（get_customize_info）と同じパスワード認証に揃える。
+        auth_string = f"{self.username}:{self.password}"
+        encoded_auth = base64.b64encode(auth_string.encode()).decode()
+        headers = {"X-Cybozu-Authorization": encoded_auth}
         try:
             response = requests.get(url, headers=headers, stream=True, allow_redirects=True)
             response.raise_for_status()
@@ -876,6 +917,8 @@ class KintoneApp:
 
     def get_customize_info(self):
         url = f"https://{self.subdomain}.cybozu.com/k/v1/app/customize.json?app={self.appid}"
+        # カスタマイズ設定の取得はアプリ管理権限が必要なため、パスワード認証を使用する。
+        # ここで得た fileKey の実ファイル取得（download_file）も同じパスワード認証で行うこと。
         auth_string = f"{self.username}:{self.password}"
         encoded_auth = base64.b64encode(auth_string.encode()).decode()
         headers = {"X-Cybozu-Authorization": encoded_auth}
@@ -1205,7 +1248,8 @@ class KintoneApp:
             except Exception as e:
                 print(f"シート {sheet_name} の作成中にエラーが発生しました: {e}")
 
-    def export_all_records(self, get_all=False):
+    def fetch_records(self, get_all=False):
+        """レコードをAPIから取得し records.json に保存する（ダウンロード工程）。"""
         url = f"https://{self.subdomain}.cybozu.com/k/v1/records.json"
         headers = {"X-Cybozu-API-Token": self.api_token}
         all_records = []
@@ -1231,9 +1275,27 @@ class KintoneApp:
                 sys.exit(1)
         if all_records:
             self._export_records_json(all_records)
-            self._export_records_tsv_excel(all_records)
         else:
             print("エクスポートするレコードが見つかりませんでした。")
+        return all_records
+
+    def build_records_excel(self):
+        """既存の records.json を読み込んでレコードのTSV/Excelを生成する（Excel工程）。"""
+        json_file = self.base_dir / f"{self.appid}_records.json"
+        if not json_file.exists():
+            print(f"レコードJSONが見つからないためレコードExcelの再生成をスキップします: {json_file}")
+            return
+        with open(json_file, 'r', encoding='utf-8') as f:
+            all_records = json.load(f)
+        if all_records:
+            self._export_records_tsv_excel(all_records)
+        else:
+            print("レコードが空のためレコードExcelの生成をスキップします。")
+
+    def export_all_records(self, get_all=False):
+        """取得とExcel生成を続けて実行する（従来互換のショートカット）。"""
+        self.fetch_records(get_all=get_all)
+        self.build_records_excel()
 
     def _export_records_json(self, all_records):
         json_file = self.base_dir / f"{self.appid}_records.json"
@@ -1298,11 +1360,16 @@ class KintoneApp:
         print(f"全レコードをExcel形式で {excel_file} にエクスポートしました。")
 
     def run(self):
-        self.download_app_data()
-        self.process_layout_and_fields()
-        self.process_layout_to_structured()
-        self.create_excel_report()
-        self.export_all_records()
+        # 取得工程（ネットアクセスが必要）
+        if self.mode in ('download', 'both'):
+            self.download_app_data()
+            self.fetch_records()
+        # Excel生成工程（既存のダウンロード結果から生成。ネット不要）
+        if self.mode in ('excel', 'both'):
+            self.process_layout_and_fields()
+            self.process_layout_to_structured()
+            self.create_excel_report()
+            self.build_records_excel()
 
 # ─── エントリーポイント ─────────────────────────────────────────────
 if __name__ == "__main__":
@@ -1310,15 +1377,18 @@ if __name__ == "__main__":
         appid = sys.argv[1]
         app = KintoneApp(appid)
         app.run()
-    elif len(sys.argv) == 6:
+    elif len(sys.argv) in (6, 7):
         appid = sys.argv[1]
         api_token = sys.argv[2]
         subdomain = sys.argv[3]
         username = sys.argv[4]
         password = sys.argv[5]
-        app = KintoneApp(appid, api_token, subdomain, username, password)
+        # 第6引数はモード（download / excel / both）。省略時は both。
+        mode = sys.argv[6] if len(sys.argv) == 7 else 'both'
+        app = KintoneApp(appid, api_token, subdomain, username, password, mode=mode)
         app.run()
     else:
-        print("Usage: python script.py <appid> [<api_token> <subdomain> <username> <password>]")
+        print("Usage: python script.py <appid> [<api_token> <subdomain> <username> <password> [<mode>]]")
+        print("  mode: download=取得のみ / excel=Excel再生成のみ / both=両方（既定）")
         print("Note: 認証情報は config_UserAccount.yaml からも読み込めます")
         sys.exit(1)
