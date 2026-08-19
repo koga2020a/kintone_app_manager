@@ -152,7 +152,7 @@ MENU_ITEMS = [
         "command": "search_downloaded",
         "is_search_downloaded": True,
         "brief": "YAML/JSON/JS を検索（Excel既定オン）",
-        "description": "アプリID省略=取得済み全件。検索語ごとのサマリとヒット一覧を Excel 出力（既定オン）",
+        "description": "アプリID省略=取得済み全件。検索語・アプリ毎の合致サマリとヒット一覧を Excel 出力（既定オン）",
         "output": "コンソール + output/search_hits_[日時].xlsx",
     },
     {
@@ -1252,7 +1252,7 @@ def search_downloaded_interactive() -> None:
         print("  1 / 2 / 3 / 0 を入力してください。")
         return
 
-    write_excel = read_yes_no("Excelに出力しますか？（検索語ごとのサマリとヒット一覧）", default=True)
+    write_excel = read_yes_no("Excelに出力しますか？（検索語・アプリ毎の合致サマリとヒット一覧）", default=True)
 
     hits: List[dict] = []
     for aid, app_dir in targets:

@@ -417,6 +417,49 @@ def _app_label(hit: Dict[str, Any]) -> str:
     return app_dir
 
 
+def _app_sort_key(app_id: str, app_name: str = "") -> Tuple[int, Any, str]:
+    text = str(app_id or "")
+    if text.isdigit():
+        return (0, int(text), app_name)
+    return (1, text, app_name)
+
+
+def summarize_app_hits(keyword: str, hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """検索語 × アプリ × 種別の合致情報。"""
+    subset = hits_for_keyword(hits, keyword) if keyword != "（全体）" else hits
+    grouped: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = {}
+    for hit in subset:
+        key = (
+            str(hit.get("app_id") or ""),
+            _app_label(hit),
+            str(hit.get("category") or ""),
+        )
+        grouped.setdefault(key, []).append(hit)
+
+    rows: List[Dict[str, Any]] = []
+    for (app_id, app_name, category), group in sorted(
+        grouped.items(),
+        key=lambda item: (*_app_sort_key(item[0][0], item[0][1]), item[0][2]),
+    ):
+        files = {(hit.get("app_dir") or "", hit.get("file") or "") for hit in group}
+        kind_text = "、".join(
+            f"{kind}: {file_count}ファイル/{line_count}行"
+            for kind, file_count, line_count in summarize_hits(group)
+        )
+        rows.append(
+            {
+                "keyword": keyword,
+                "app_id": app_id,
+                "app_name": app_name,
+                "category": category,
+                "hit_count": len(group),
+                "file_count": len(files),
+                "kind_detail": kind_text,
+            }
+        )
+    return rows
+
+
 def export_search_hits_to_excel(
     keywords: Iterable[str],
     hits: List[Dict[str, Any]],
@@ -432,6 +475,11 @@ def export_search_hits_to_excel(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     header_fill = PatternFill(start_color="E6F3FF", end_color="E6F3FF", fill_type="solid")
+    section_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    app_fills = [
+        PatternFill(start_color="DEEBF7", end_color="DEEBF7", fill_type="solid"),
+        PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid"),
+    ]
     header_font = Font(bold=True)
     header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
     data_align = Alignment(vertical="center", wrap_text=True)
@@ -442,29 +490,61 @@ def export_search_hits_to_excel(
         bottom=Side(style="thin"),
     )
 
-    def write_table(ws, headers: List[str], rows: List[List[Any]], widths: List[int]) -> None:
+    def fills_by_app(keys: List[Any]) -> List[PatternFill]:
+        fills: List[PatternFill] = []
+        last = object()
+        index = -1
+        for key in keys:
+            if key != last:
+                index += 1
+                last = key
+            fills.append(app_fills[index % 2])
+        return fills
+
+    def write_table(
+        ws,
+        headers: List[str],
+        rows: List[List[Any]],
+        widths: List[int],
+        start_row: int = 1,
+        row_fills: Optional[List[PatternFill]] = None,
+        auto_filter: bool = True,
+        freeze: bool = True,
+    ) -> int:
+        header_row = start_row
         for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col, value=header)
+            cell = ws.cell(row=header_row, column=col, value=header)
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = header_align
             cell.border = thin
-        for row_idx, row in enumerate(rows, 2):
+        for offset, row in enumerate(rows):
+            row_idx = header_row + 1 + offset
+            fill = row_fills[offset] if row_fills and offset < len(row_fills) else None
             for col, value in enumerate(row, 1):
                 cell = ws.cell(row=row_idx, column=col, value=value)
                 cell.alignment = data_align
                 cell.border = thin
+                if fill is not None:
+                    cell.fill = fill
         for col, width in enumerate(widths, 1):
-            ws.column_dimensions[get_column_letter(col)].width = width
-        if rows:
-            ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{len(rows) + 1}"
-        ws.freeze_panes = "A2"
-        ws.row_dimensions[1].height = 22
+            current = ws.column_dimensions[get_column_letter(col)].width
+            if current is None or current < width:
+                ws.column_dimensions[get_column_letter(col)].width = width
+        last_row = header_row + len(rows)
+        if auto_filter and rows:
+            ws.auto_filter.ref = (
+                f"A{header_row}:{get_column_letter(len(headers))}{last_row}"
+            )
+        if freeze:
+            ws.freeze_panes = f"A{header_row + 1}"
+        ws.row_dimensions[header_row].height = 22
+        return last_row
 
     wb = Workbook()
     summary_ws = wb.active
     summary_ws.title = "サマリ"
-    summary_headers = [
+    keyword_headers = [
         "検索語",
         "ヒット行数",
         "アプリ数",
@@ -475,10 +555,10 @@ def export_search_hits_to_excel(
         "ファイル種類内訳",
         "対象アプリ",
     ]
-    summary_rows: List[List[Any]] = []
+    keyword_rows: List[List[Any]] = []
     for word in words:
         row = summarize_keyword_hits(word, hits)
-        summary_rows.append(
+        keyword_rows.append(
             [
                 row["keyword"],
                 row["hit_count"],
@@ -492,7 +572,7 @@ def export_search_hits_to_excel(
             ]
         )
     total = summarize_keyword_hits("（全体）", hits)
-    summary_rows.append(
+    keyword_rows.append(
         [
             total["keyword"],
             total["hit_count"],
@@ -505,7 +585,62 @@ def export_search_hits_to_excel(
             total["app_ids"],
         ]
     )
-    write_table(summary_ws, summary_headers, summary_rows, [24, 12, 10, 10, 40, 14, 12, 40, 24])
+    write_table(
+        summary_ws,
+        keyword_headers,
+        keyword_rows,
+        [24, 12, 10, 10, 40, 14, 12, 40, 24],
+        auto_filter=False,
+        freeze=False,
+    )
+
+    app_headers = [
+        "検索語",
+        "アプリID",
+        "アプリ名",
+        "種別",
+        "ヒット行数",
+        "ファイル数",
+        "ファイル種類内訳",
+    ]
+    app_rows: List[List[Any]] = []
+    app_keys: List[str] = []
+    for word in [*words, "（全体）"]:
+        for row in summarize_app_hits(word, hits):
+            app_rows.append(
+                [
+                    row["keyword"],
+                    row["app_id"],
+                    row["app_name"],
+                    row["category"],
+                    row["hit_count"],
+                    row["file_count"],
+                    row["kind_detail"],
+                ]
+            )
+            app_keys.append(str(row["app_id"]))
+
+    title_row = len(keyword_rows) + 3
+    title_cell = summary_ws.cell(row=title_row, column=1, value="アプリ毎の合致")
+    title_cell.font = header_font
+    title_cell.fill = section_fill
+    last_col = get_column_letter(len(app_headers))
+    summary_ws.merge_cells(f"A{title_row}:{last_col}{title_row}")
+    for col in range(1, len(app_headers) + 1):
+        cell = summary_ws.cell(row=title_row, column=col)
+        cell.fill = section_fill
+        cell.border = thin
+
+    write_table(
+        summary_ws,
+        app_headers,
+        app_rows,
+        [24, 12, 24, 16, 12, 12, 40],
+        start_row=title_row + 1,
+        row_fills=fills_by_app(app_keys),
+        auto_filter=True,
+        freeze=True,
+    )
 
     used_names = {summary_ws.title}
     hit_headers = ["アプリID", "アプリ名", "種別", "種類", "ファイル", "行", "内容", "検索語"]
@@ -525,7 +660,13 @@ def export_search_hits_to_excel(
             ]
             for hit in subset
         ]
-        write_table(ws, hit_headers, hit_rows, [12, 24, 16, 14, 40, 8, 80, 20])
+        write_table(
+            ws,
+            hit_headers,
+            hit_rows,
+            [12, 24, 16, 14, 40, 8, 80, 20],
+            row_fills=fills_by_app([str(hit.get("app_id") or "") for hit in subset]),
+        )
 
     wb.save(output_path)
     return output_path
