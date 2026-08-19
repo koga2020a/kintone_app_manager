@@ -23,18 +23,40 @@ BASE_DIR_NAME = '___base___'
 # グローバル変数
 EXIT_ON_ERROR = True  # エラー時に終了するかどうかのフラグ
 
-def exit_with_error(message: str = "処理を中断します"):
+def exit_with_error(message: str = "処理を中断します", code: int = 1):
     """エラー時に終了する関数
     
     Args:
         message (str): エラーメッセージ
+        code (int): 終了コード。権限不足は 3
     """
     print(f"エラー: {message}")
     if EXIT_ON_ERROR:
-        print("sys.exit(1) を実行します")
-        sys.exit(1)
+        print(f"sys.exit({code}) を実行します")
+        sys.exit(code)
     else:
         print("EXIT_ON_ERROR=False のため、処理を継続します")
+
+
+def print_api_token_permission_guide(subdomain=None, appid=None):
+    """APIトークンの権限追加手順を表示する。"""
+    print()
+    print("=" * 60)
+    print("  APIトークンの権限が不足しています（403 Forbidden）")
+    print("=" * 60)
+    print("  設定の取得には「レコード閲覧」が必要です。")
+    print("  「アプリ管理」だけのトークンでは 403 になります。")
+    print()
+    print("  次の手順で権限を追加してください:")
+    print("  1. 対象アプリ → アプリの設定 → APIトークン")
+    if subdomain and appid:
+        print(f"     https://{subdomain}.cybozu.com/k/admin/app/apitoken?app={appid}")
+    print("  2. 使用中のトークンにチェックを付ける")
+    print("       [必須] レコード閲覧")
+    print("       [推奨] アプリ管理（ACL・カスタマイズJS用）")
+    print("  3. 画面右下の「保存」をクリック")
+    print("  4. 画面右上の「アプリを更新」で反映する")
+    print("=" * 60)
 
 # ─── 補助関数 ─────────────────────────────────────────────
 def process_file(layout_file_path, fields_file_path, output_file):
@@ -816,15 +838,20 @@ class KintoneApp:
 
     def fetch_data(self, url, headers):
         try:
-            # レコード通知設定の場合、POSTメソッドとリクエストボディが必要
             if "perRecord.json" in url:
-                data = {"app": self.appid}
-                response = requests.get(url, headers=headers, json=data)
+                response = requests.get(url, headers=headers, json={"app": self.appid})
             else:
                 response = requests.get(url, headers=headers)
             response.raise_for_status()
             content = self.convert_to_utf8_if_sjis(response.content)
             return json.loads(content)
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response is not None else None
+            print(f"Error fetching data from {url}: {e}")
+            if status in (401, 403):
+                print_api_token_permission_guide(self.subdomain, self.appid)
+                exit_with_error(f"APIトークンの権限不足です: {url}", code=3)
+            exit_with_error(f"データの取得に失敗しました: {url}")
         except requests.exceptions.RequestException as e:
             print(f"Error fetching data from {url}: {e}")
             exit_with_error(f"データの取得に失敗しました: {url}")
@@ -836,7 +863,7 @@ class KintoneApp:
     def get_app_name_by_settings(self):
         url = f"https://{self.subdomain}.cybozu.com/k/v1/app/settings.json?app={self.appid}"
         headers = {"X-Cybozu-API-Token": self.api_token}
-        print(f'url: {url}   headers: {headers}')
+        print(f"url: {url}")
         data = self.fetch_data(url, headers)
         raw_app_name = data.get("name", "")
         return self.sanitize_app_name(raw_app_name)
@@ -882,6 +909,10 @@ class KintoneApp:
             js_info.append({'file_id': file_key, 'file_name': safe_filename, 'type': 'file'})
         except requests.exceptions.RequestException as e:
             print(f"Error downloading file {file_name}: {e}")
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status in (401, 403):
+                print_api_token_permission_guide(self.subdomain, self.appid)
+                exit_with_error(f"APIトークンの権限不足です: {file_name}", code=3)
             exit_with_error(f"ファイルのダウンロードに失敗しました: {file_name}")
 
     def download_url_content(self, url, js_info):
@@ -1013,6 +1044,27 @@ class KintoneApp:
                     self.download_file(file_data['fileKey'], file_data['name'], js_info)
         self.save_json_file(js_info, "javascript_info")
         self.save_yaml_file(js_info, "javascript_info")
+        self._try_download_webhooks()
+
+    def _try_download_webhooks(self):
+        """Webhook設定を取得する。未対応や権限不足ならスキップする。"""
+        paths = ["app/webhooks.json", "webhooks.json"]
+        headers = {"X-Cybozu-API-Token": self.api_token}
+        for path in paths:
+            url = f"https://{self.subdomain}.cybozu.com/k/v1/{path}?app={self.appid}"
+            try:
+                response = requests.get(url, headers=headers, timeout=30)
+                if response.status_code != 200:
+                    continue
+                content = self.convert_to_utf8_if_sjis(response.content)
+                data = json.loads(content)
+                self.save_json_file(data, "webhooks")
+                self.save_yaml_file(data, "webhooks")
+                print(f"Webhook設定を取得しました: {url}")
+                return
+            except Exception:
+                continue
+        print("Webhook設定の取得をスキップしました（API未対応または権限不足）")
 
     def process_layout_and_fields(self):
         layout_file = self.json_dir / f"{self.appid}_form_layout.json"

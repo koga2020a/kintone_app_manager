@@ -293,6 +293,9 @@ def get_app_json(config, logger, app_id=None):
     script = scripts_get_app_json
     logger.info(f"==== スクリプト [{script}] の実行開始 ====")
     result = get_app_json_do(config, logger, app_id=app_id, script_filename=script)
+    if result == "forbidden":
+        logger.error(f"スクリプト [{script}] の実行に失敗しました（APIトークン権限不足）")
+        return "forbidden"
     if not result:
         logger.error(f"スクリプト [{script}] の実行に失敗しました")
         return False
@@ -393,6 +396,8 @@ def get_app_json_do(config, logger, app_id=None, script_filename="download2yaml_
                 stderr=e.stderr,
                 context=f"アプリID {aid} のJSONデータ取得",
             )
+            if e.returncode == 3:
+                return "forbidden"
             success = False
 
     return success
@@ -994,6 +999,9 @@ def main():
             
     elif args.command == 'app':
         result = get_app_json(config, logger, args.id)
+        if result == "forbidden":
+            print("エラー: APIトークンの権限が不足しています。レコード閲覧を付けてアプリを更新し、再試行してください。")
+            sys.exit(3)
         if result:
             print("アプリのJSONデータ取得が完了しました")
             

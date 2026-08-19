@@ -89,6 +89,11 @@ def find_all_paths(states, actions):
 
 def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
     """ワークフロー情報をExcelに出力"""
+    # プロセス管理が無効なアプリは states/actions が null になる
+    process_data = dict(process_data or {})
+    process_data['states'] = process_data.get('states') or {}
+    process_data['actions'] = process_data.get('actions') or []
+
     if output_file is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         if app_dir:
@@ -142,10 +147,13 @@ def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
     ws_basic.row_dimensions[1].height = 30
     
     # 基本情報の書き込み
+    enabled = bool(process_data.get('enable'))
     basic_info = [
-        ("有効化", "はい" if process_data.get('enable') else "いいえ"),
-        ("リビジョン", process_data.get('revision', ''))
+        ("有効化", "はい" if enabled else "いいえ"),
+        ("リビジョン", process_data.get('revision', '')),
     ]
+    if not enabled:
+        basic_info.append(("備考", "プロセス管理は無効です。状態・アクションはありません。"))
     
     for row, (label, value) in enumerate(basic_info, 2):
         ws_basic.cell(row=row, column=1, value=label)
@@ -178,11 +186,11 @@ def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
     for state_name, state_info in process_data.get('states', {}).items():
         ws_states.cell(row=row, column=1, value=state_name)
         ws_states.cell(row=row, column=2, value=state_info.get('index', ''))
-        assignee = state_info.get('assignee', {})
+        assignee = state_info.get('assignee') or {}
         ws_states.cell(row=row, column=3, value=assignee.get('type', ''))
         
         # 作業者の処理を修正
-        entities = assignee.get('entities', [])
+        entities = assignee.get('entities') or []
         entity_info = []
         for entity in entities:
             if isinstance(entity, dict) and 'entity' in entity:
@@ -294,8 +302,8 @@ def create_workflow_excel(app_id, process_data, output_file=None, app_dir=None):
         cell.alignment = header_alignment
         cell.border = thin_border
         # 作業者
-        assignee = states_dict[status].get('assignee', {})
-        entities = assignee.get('entities', [])
+        assignee = states_dict[status].get('assignee') or {}
+        entities = assignee.get('entities') or []
         entity_info = []
         for entity in entities:
             if isinstance(entity, dict) and 'entity' in entity:
