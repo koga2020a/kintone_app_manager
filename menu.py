@@ -4,17 +4,20 @@
 Kintone統合実行ツールの対話型メニュー。
 
 python menu.py で起動し、番号選択で kintone_runner.py の各機能を実行します。
+詳細表示は python menu.py --detail です。
 
 設定はすべて同じフォルダの .kintone.env に書きます。
 アプリID と管理用 API トークンの対応は app_tokens に登録します。
 """
 
+import argparse
 import getpass
 import re
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 try:
@@ -23,11 +26,13 @@ except ImportError:
     yaml = None  # type: ignore
 
 from inspect_downloaded import (
+    export_search_hits_to_excel,
     extract_webhook_rows,
     fetch_and_save_webhooks,
     find_app_output_dir,
     find_webhook_file,
     is_stale_webhook_file,
+    list_app_output_dirs,
     load_json_or_yaml,
     search_downloaded,
     summarize_hits,
@@ -37,6 +42,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 RUNNER = SCRIPT_DIR / "kintone_runner.py"
 ENV_FILE = SCRIPT_DIR / ".kintone.env"
 OUTPUT_DIR = SCRIPT_DIR / "output"
+DETAIL_MODE = False
 PREFERRED_ENV_KEYS = [
     "subdomain",
     "username",
@@ -69,6 +75,7 @@ MENU_ITEMS = [
         "label": "アプリ設定・JavaScript の一括取得",
         "command": "app",
         "highlight": True,
+        "brief": "設定・JSを ./output へ保存",
         "description": ".kintone.env の app_tokens（アプリID と APIトークンの対応）を使い、取得できる設定をすべて ./output へ保存",
         "detail_lines": [
             "取得: フォーム / ACL / 通知 / プロセス / ビュー / グラフ / プラグイン / カスタマイズJS など",
@@ -81,6 +88,7 @@ MENU_ITEMS = [
         "label": "接続情報の設定（URL / ログイン / アプリ）",
         "command": "set_connection",
         "is_set_connection": True,
+        "brief": ".kintone.env を作成・更新",
         "description": "subdomain・username・password・app_tokens を入力して .kintone.env に保存（既存は上書き、Enterは維持）",
         "output": ".kintone.env",
     },
@@ -88,12 +96,14 @@ MENU_ITEMS = [
         "label": "kintone アプリIDとトークンを追加",
         "command": "add_token",
         "is_add_token": True,
+        "brief": "app_tokens に1件追加",
         "description": "アプリIDとAPIトークンを入力して .kintone.env の app_tokens に追加（既存IDは上書き）",
         "output": ".kintone.env",
     },
     {
         "label": "ACL情報をExcelに変換",
         "command": "acl",
+        "brief": "ACLをExcelレポート化",
         "description": "先に一括取得したアプリの ACL を Excel レポートに変換",
         "output": "output/acl_report_[アプリID]_[日時].xlsx",
         "needs_app_id": True,
@@ -101,12 +111,14 @@ MENU_ITEMS = [
     {
         "label": "アプリ設定一覧表の出力",
         "command": "summary",
+        "brief": "設定全体をExcel一覧に",
         "description": "先に一括取得したアプリ設定の全体一覧を Excel で出力",
         "output": "output/kintone_app_settings_summary_[日時].xlsx",
     },
     {
         "label": "通知設定をExcelに変換",
         "command": "notifications",
+        "brief": "通知をExcel化",
         "description": "先に一括取得した一般・レコード・リマインダー通知を Excel に変換",
         "output": "output/[アプリID]_notifications.xlsx",
         "needs_app_id": True,
@@ -114,6 +126,7 @@ MENU_ITEMS = [
     {
         "label": "プロセスワークフローをExcelに変換",
         "command": "process_workflow",
+        "brief": "プロセス管理をExcel化",
         "description": "先に一括取得したプロセス管理設定を Excel に変換",
         "output": "output/[アプリID]_process_workflow.xlsx",
         "needs_app_id": True,
@@ -122,6 +135,7 @@ MENU_ITEMS = [
         "label": "Webhook設定一覧の表示",
         "command": "webhooks",
         "is_webhooks": True,
+        "brief": "Webhookを一覧表示",
         "description": "先に一括取得したアプリの Webhook 設定を一覧表示",
         "output": "コンソール出力",
     },
@@ -129,6 +143,7 @@ MENU_ITEMS = [
         "label": "検索文字列の設定",
         "command": "search_keywords",
         "is_search_keywords": True,
+        "brief": "search_keywords を編集",
         "description": "取得済みデータ検索で使う文字列を .kintone.env の search_keywords に追加・削除",
         "output": ".kintone.env",
     },
@@ -136,18 +151,21 @@ MENU_ITEMS = [
         "label": "取得済みデータから検索（JS含む）",
         "command": "search_downloaded",
         "is_search_downloaded": True,
-        "description": "追加済みを使う / 追加して使う / 今回だけ入力 から選び、YAML・JSON・JavaScript を検索",
-        "output": "コンソール出力",
+        "brief": "YAML/JSON/JS を検索（Excel既定オン）",
+        "description": "アプリID省略=取得済み全件。検索語ごとのサマリとヒット一覧を Excel 出力（既定オン）",
+        "output": "コンソール + output/search_hits_[日時].xlsx",
     },
     {
         "label": "ユーザーとグループ情報の取得",
         "command": "users",
+        "brief": "ユーザー一覧をExcel/CSV出力",
         "description": "全ユーザーと所属グループを Excel/CSV に出力（ユーザー名・パスワード認証）",
         "output": "output/kintone_users_groups_[日時].xlsx",
     },
     {
         "label": "グループ操作",
         "command": "group",
+        "brief": "一覧・検索・追加・削除",
         "description": "一覧表示・ユーザー検索・追加・削除（ユーザー名・パスワード認証）",
         "output": "コンソール出力",
         "is_group": True,
@@ -155,6 +173,7 @@ MENU_ITEMS = [
     {
         "label": "すべての機能を順番に実行",
         "command": "all",
+        "brief": "主要機能を一括実行",
         "description": "users → app → acl → summary → notifications → process_workflow",
         "output": "上記すべての出力ファイル",
         "needs_app_filter": True,
@@ -162,6 +181,7 @@ MENU_ITEMS = [
     {
         "label": "出力ファイル一覧の表示",
         "command": "outputs",
+        "brief": "生成ファイルの概要",
         "description": "生成される Excel/CSV の一覧と概要を表示",
         "output": "（表示のみ）",
     },
@@ -169,6 +189,7 @@ MENU_ITEMS = [
         "label": "設定ファイルの説明・登録状況",
         "command": "config",
         "is_config_help": True,
+        "brief": ".kintone.env の内容を表示",
         "description": ".kintone.env の場所・書き方・現在の登録内容を表示（トークンは伏せます）",
         "output": "（表示のみ）",
     },
@@ -289,6 +310,20 @@ def print_header():
 def print_config_status():
     """設定ファイルの場所と現在の登録状況を毎回表示する。"""
     preview = load_env_preview()
+    compact_ok = (
+        not DETAIL_MODE
+        and preview.get("exists")
+        and not preview.get("error")
+        and not preview.get("missing")
+    )
+    if compact_ok:
+        app_ids = preview.get("app_ids") or []
+        apps = f"{len(app_ids)} 件  [{', '.join(app_ids)}]" if app_ids else "0 件"
+        print(c("【設定】", BOLD))
+        print(c(f"  {preview['path']}  対象アプリ: {apps}", CYAN))
+        print()
+        return
+
     print(c("【設定箇所】", BOLD))
     print(c(f"  ファイル: {preview['path']}", CYAN))
     print("  書き方  : YAML。アプリID とトークンは app_tokens に対で書く")
@@ -441,24 +476,25 @@ def print_config_help():
 
 def print_menu_item(index: int, item: dict):
     num = f"{index:2}"
+    brief = item.get("brief") or ""
+    label = f"{MARK} {item['label']}" if item.get("highlight") else item["label"]
+    first = f"  {num}. {label}"
+    if brief:
+        first = f"{first}  … {brief}"
+    second = item["description"]
     if item.get("highlight"):
-        print(c(f"  {num}. {MARK} {item['label']}", BOLD, CYAN))
-        print(c(f"      {item['description']}", YELLOW))
-        for line in item.get("detail_lines", []):
-            print(c(f"      {line}", GREEN))
         app_ids = load_app_tokens_preview()
         if app_ids:
-            print(c(f"      対象（.kintone.env の app_tokens）: {', '.join(app_ids)}", BOLD, CYAN))
+            second = f"{second}  対象: {', '.join(app_ids)}"
         elif ENV_FILE.exists():
-            print(c("      対象: なし  → .kintone.env の app_tokens にアプリIDとトークンを書いてください", DIM))
+            second = f"{second}  対象: なし → app_tokens を設定してください"
         else:
-            print(c(f"      ※ 先に {ENV_FILE.name} を作成してください", YELLOW))
-        print(c(f"      出力先: {item['output']}", CYAN))
+            second = f"{second}  ※ 先に {ENV_FILE.name} を作成してください"
+        print(c(first, BOLD, CYAN))
+        print(c(f"      {second}", YELLOW))
     else:
-        print(f"  {num}. {item['label']}")
-        print(f"      {item['description']}")
-        print(f"      出力: {item['output']}")
-    print()
+        print(first)
+        print(f"      {second}")
 
 
 def print_menu():
@@ -467,8 +503,17 @@ def print_menu():
     print()
     for i, item in enumerate(MENU_ITEMS, start=1):
         print_menu_item(i, item)
+    print()
     print("   0. 終了")
     print()
+
+
+def read_yes_no(prompt: str, default: bool = True) -> bool:
+    hint = "Y/n" if default else "y/N"
+    raw = input(f"  {prompt} [{hint}]: ").strip().lower()
+    if not raw:
+        return default
+    return raw in ("y", "yes")
 
 
 def read_choice(prompt: str, valid: Set[str]) -> str:
@@ -1114,41 +1159,62 @@ def manage_search_keywords_interactive() -> None:
         print("  1 / 2 / 0 を入力してください。")
 
 
-def print_search_hits(keywords: List[str], hits: List[dict]) -> None:
+def print_search_hits(keywords: List[str], hits: List[dict], multi_app: bool = False) -> None:
     print()
     print(c(f"  検索語: {', '.join(keywords)}", BOLD, CYAN))
     if not hits:
         print("  該当なし")
         return
-    summary = summarize_hits(hits)
     print(c(f"  該当 {len(hits)} 行", BOLD, CYAN))
-    print("  該当したもの:")
-    for kind, file_count, line_count in summary:
-        print(f"    ・{kind}: {file_count} ファイル / {line_count} 行")
-    print()
-    current_file = None
+    if DETAIL_MODE:
+        print("  該当したもの:")
+        for kind, file_count, line_count in summarize_hits(hits):
+            print(f"    ・{kind}: {file_count} ファイル / {line_count} 行")
+        print()
+    current_key = None
+    file_keywords: Dict[Tuple[str, str], List[str]] = {}
     for hit in hits:
-        loc = f"{hit['file']}:{hit['line']}"
-        if hit["file"] != current_file:
-            current_file = hit["file"]
-            print(c(f"  [{hit['kind']}] {hit['file']}", YELLOW))
+        key = (hit.get("app_dir") or "", hit["file"])
+        seen = file_keywords.setdefault(key, [])
+        for word in hit["keywords"]:
+            if word not in seen:
+                seen.append(word)
+    for hit in hits:
+        key = (hit.get("app_dir") or "", hit["file"])
+        if key != current_key:
+            current_key = key
+            file_label = hit["file"]
+            if multi_app and hit.get("app_dir"):
+                file_label = f"{hit['app_dir']}/{hit['file']}"
+            hit_words = ", ".join(file_keywords.get(key, hit["keywords"]))
+            label = hit.get("category") or hit["kind"]
+            print(c(f"  [{label}] {file_label}  ヒット: {hit_words}", YELLOW))
         preview = hit["text"]
         if len(preview) > 160:
             preview = preview[:157] + "..."
         print(f"    L{hit['line']:>5}  {preview}")
-        print(c(f"           ヒット: {', '.join(hit['keywords'])}", DIM))
 
 
 def search_downloaded_interactive() -> None:
     print()
     print(c("  取得済みデータから検索（JavaScript / YAML / JSON など）", BOLD, CYAN))
-    app_id = read_required_app_id()
-    if not app_id:
-        return
-    app_dir = resolve_app_output_dir(app_id)
-    if not app_dir:
-        return
-    print(c(f"  参照: {app_dir}", DIM))
+    app_id = read_app_id(optional=True)
+    if app_id:
+        app_dir = resolve_app_output_dir(app_id)
+        if not app_dir:
+            return
+        targets: List[Tuple[str, Path]] = [(app_id, app_dir)]
+    else:
+        targets = list_app_output_dirs(OUTPUT_DIR)
+        if not targets:
+            print(c("  取得済みフォルダがありません。", BOLD, YELLOW))
+            print("  先にメニュー「アプリ設定・JavaScript の一括取得」を実行してください。")
+            return
+        ids = ", ".join(aid for aid, _ in targets)
+        print(c(f"  対象: {len(targets)} アプリ  [{ids}]", CYAN))
+    if DETAIL_MODE:
+        for _, app_dir in targets:
+            print(c(f"  参照: {app_dir}", DIM))
     print()
     print_search_keywords()
     print()
@@ -1186,8 +1252,21 @@ def search_downloaded_interactive() -> None:
         print("  1 / 2 / 3 / 0 を入力してください。")
         return
 
-    hits = search_downloaded(app_dir, keywords)
-    print_search_hits(keywords, hits)
+    write_excel = read_yes_no("Excelに出力しますか？（検索語ごとのサマリとヒット一覧）", default=True)
+
+    hits: List[dict] = []
+    for aid, app_dir in targets:
+        found = search_downloaded(app_dir, keywords)
+        for hit in found:
+            hit["app_id"] = aid
+            hit["app_dir"] = app_dir.name
+        hits.extend(found)
+    print_search_hits(keywords, hits, multi_app=len(targets) > 1)
+    if write_excel:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        excel_path = OUTPUT_DIR / f"search_hits_{timestamp}.xlsx"
+        export_search_hits_to_excel(keywords, hits, excel_path)
+        print(c(f"  Excel: {excel_path}", BOLD, CYAN))
     print()
 
 
@@ -1293,7 +1372,21 @@ def run_runner(runner_args: List[str], env_path: Optional[Path] = None, highligh
     return result.returncode
 
 
+def parse_args(argv: Optional[List[str]] = None):
+    parser = argparse.ArgumentParser(description="Kintone統合実行ツールの対話型メニュー")
+    parser.add_argument(
+        "--detail",
+        action="store_true",
+        help="詳細表示あり（設定箇所の全文、検索の参照パス・内訳など）",
+    )
+    return parser.parse_args(argv)
+
+
 def main():
+    global DETAIL_MODE
+    args = parse_args()
+    DETAIL_MODE = args.detail
+
     if not RUNNER.exists():
         print(f"エラー: {RUNNER} が見つかりません。")
         sys.exit(1)

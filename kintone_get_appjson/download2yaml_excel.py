@@ -943,7 +943,10 @@ class KintoneApp:
         url = f"https://{self.subdomain}.cybozu.com/k/v1/app/customize.json?app={self.appid}"
         auth_string = f"{self.username}:{self.password}"
         encoded_auth = base64.b64encode(auth_string.encode()).decode()
-        headers = {"X-Cybozu-Authorization": encoded_auth}
+        headers = {
+            "X-Cybozu-Authorization": encoded_auth,
+            "X-Requested-With": "XMLHttpRequest",
+        }
         try:
             response = requests.get(url, headers=headers)
             response.raise_for_status()
@@ -1044,27 +1047,32 @@ class KintoneApp:
                     self.download_file(file_data['fileKey'], file_data['name'], js_info)
         self.save_json_file(js_info, "javascript_info")
         self.save_yaml_file(js_info, "javascript_info")
-        self._try_download_webhooks()
+        self._download_via_dev_api()
 
-    def _try_download_webhooks(self):
-        """Webhook設定を取得する。未対応や権限不足ならスキップする。"""
-        paths = ["app/webhooks.json", "webhooks.json"]
-        headers = {"X-Cybozu-API-Token": self.api_token}
-        for path in paths:
-            url = f"https://{self.subdomain}.cybozu.com/k/v1/{path}?app={self.appid}"
-            try:
-                response = requests.get(url, headers=headers, timeout=30)
-                if response.status_code != 200:
-                    continue
-                content = self.convert_to_utf8_if_sjis(response.content)
-                data = json.loads(content)
-                self.save_json_file(data, "webhooks")
-                self.save_yaml_file(data, "webhooks")
-                print(f"Webhook設定を取得しました: {url}")
-                return
-            except Exception:
+    def _download_via_dev_api(self):
+        """管理画面と同じ /k/api/dev/app/{id}/... で追加設定を取得する。"""
+        if not self.username or not self.password:
+            print("管理画面APIの取得をスキップしました（username / password が必要です）")
+            return
+        root = Path(__file__).resolve().parent.parent
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+        from kintone_dev_api import DEV_APP_RESOURCES, fetch_dev_app_json
+
+        for resource, name in DEV_APP_RESOURCES:
+            data, error = fetch_dev_app_json(
+                self.subdomain,
+                self.username,
+                self.password,
+                str(self.appid),
+                resource,
+            )
+            if data is None:
+                print(f"  スキップ: /k/api/dev/app/{self.appid}/{resource} ({error})")
                 continue
-        print("Webhook設定の取得をスキップしました（API未対応または権限不足）")
+            self.save_json_file(data, name)
+            self.save_yaml_file(data, name)
+            print(f"  取得: /k/api/dev/app/{self.appid}/{resource} -> {name}")
 
     def process_layout_and_fields(self):
         layout_file = self.json_dir / f"{self.appid}_form_layout.json"

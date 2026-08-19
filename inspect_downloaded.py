@@ -4,13 +4,14 @@
 
 from __future__ import annotations
 
-import base64
 import json
+import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-import requests
 import yaml
+
+from kintone_dev_api import fetch_dev_app_json
 
 SEARCH_SUFFIXES = {
     ".js",
@@ -27,6 +28,35 @@ SEARCH_SUFFIXES = {
 
 KIND_ORDER = ["JavaScript", "CSS", "設定JSON", "設定YAML", "その他テキスト"]
 
+CATEGORY_LABELS = {
+    "webhooks": "webhook",
+    "webhook": "webhook",
+    "javascript_info": "javascript",
+    "field_codes_usage_at_javascript": "javascript",
+    "customize": "customize",
+    "form": "form",
+    "form_fields": "form",
+    "form_layout": "form",
+    "views": "view",
+    "graphs": "graph",
+    "plugins": "plugin",
+    "actions": "action",
+    "settings": "settings",
+    "app_acl": "app_acl",
+    "record_acl": "record_acl",
+    "field_acl": "field_acl",
+    "app_notifications": "notification",
+    "general_notifications": "notification",
+    "record_notifications": "notification",
+    "reminder_notifications": "notification",
+    "process_management": "process",
+}
+
+
+def _app_id_from_output_name(name: str) -> Optional[str]:
+    prefix = name.split("_", 1)[0]
+    return prefix if prefix.isdigit() else None
+
 
 def find_app_output_dir(output_dir: Path, app_id: str) -> Optional[Path]:
     """output 内の {app_id}_* ディレクトリのうち、更新が新しいものを返す。"""
@@ -42,6 +72,25 @@ def find_app_output_dir(output_dir: Path, app_id: str) -> Optional[Path]:
     return max(matches, key=lambda path: path.stat().st_mtime)
 
 
+def list_app_output_dirs(output_dir: Path) -> List[Tuple[str, Path]]:
+    """output 内の各アプリIDについて、最新フォルダを返す。"""
+    if not output_dir.exists():
+        return []
+    by_id: Dict[str, List[Path]] = {}
+    for path in output_dir.iterdir():
+        if not path.is_dir():
+            continue
+        app_id = _app_id_from_output_name(path.name)
+        if not app_id:
+            continue
+        by_id.setdefault(app_id, []).append(path)
+    result: List[Tuple[str, Path]] = []
+    for app_id in sorted(by_id, key=int):
+        newest = max(by_id[app_id], key=lambda path: path.stat().st_mtime)
+        result.append((app_id, newest))
+    return result
+
+
 def classify_file(app_dir: Path, file_path: Path) -> str:
     rel = file_path.relative_to(app_dir).as_posix()
     suffix = file_path.suffix.lower()
@@ -54,6 +103,21 @@ def classify_file(app_dir: Path, file_path: Path) -> str:
     if suffix in {".yaml", ".yml"}:
         return "設定YAML"
     return "その他テキスト"
+
+
+def classify_category(app_dir: Path, file_path: Path) -> str:
+    """webhook / javascript など、設定内容の種別を返す。"""
+    rel = file_path.relative_to(app_dir).as_posix().replace("\\", "/").lower()
+    suffix = file_path.suffix.lower()
+    if "/javascript/" in f"/{rel}" or suffix == ".js":
+        return "javascript"
+    if suffix == ".css":
+        return "css"
+    stem = file_path.stem.lower()
+    match = re.match(r"^\d+_(.+)$", stem)
+    if match:
+        stem = match.group(1)
+    return CATEGORY_LABELS.get(stem, stem or "other")
 
 
 def load_json_or_yaml(path: Path) -> Any:
@@ -101,34 +165,8 @@ def fetch_webhooks_via_admin(
     username: str,
     password: str,
 ) -> Tuple[Optional[Any], Optional[str]]:
-    """管理画面と同じ内部APIで Webhook 一覧を取る。
-
-    公開 REST API には Webhook 一覧を取得する API が無いため、
-    管理画面 (/k/admin/app/webhook?app=N) が内部で使っている
-    /k/api/dev/app/{app_id}/webhook/list.json を直接叩く。
-    パスワード認証ヘッダのみで動作し、ログインセッションや
-    リクエストトークンは不要。
-    """
-    path = f"/k/api/dev/app/{app_id}/webhook/list.json"
-    url = f"https://{subdomain}.cybozu.com{path}"
-    encoded = base64.b64encode(f"{username}:{password}".encode()).decode()
-    headers = {
-        "X-Cybozu-Authorization": encoded,
-        "X-Requested-With": "XMLHttpRequest",
-        "Content-Type": "application/json",
-    }
-    try:
-        response = requests.post(url, headers=headers, json={}, timeout=30)
-        if response.status_code != 200:
-            return None, f"{path} -> {response.status_code}"
-        data = response.json()
-        if isinstance(data, dict) and (data.get("success") or data.get("result") is not None):
-            result = data.get("result")
-            if result is not None:
-                return result, None
-        return data, None
-    except Exception as e:
-        return None, str(e)
+    """管理画面と同じ内部APIで Webhook 一覧を取る。"""
+    return fetch_dev_app_json(subdomain, username, password, app_id, "webhook/list.json")
 
 
 def fetch_and_save_webhooks(
@@ -243,6 +281,20 @@ def is_stale_webhook_file(data: Any) -> bool:
     return False
 
 
+def _yaml_twin_exists(file_path: Path, app_dir: Path) -> bool:
+    """同じ設定の YAML がある JSON は重複なので除外する。"""
+    if file_path.suffix.lower() != ".json":
+        return False
+    stem = file_path.stem
+    candidates = [
+        file_path.with_suffix(".yaml"),
+        file_path.with_suffix(".yml"),
+        app_dir / f"{stem}.yaml",
+        app_dir / f"{stem}.yml",
+    ]
+    return any(path.is_file() for path in candidates)
+
+
 def search_downloaded(
     app_dir: Path, keywords: Iterable[str]
 ) -> List[Dict[str, Any]]:
@@ -257,11 +309,14 @@ def search_downloaded(
             continue
         if file_path.suffix.lower() not in SEARCH_SUFFIXES:
             continue
+        if _yaml_twin_exists(file_path, app_dir):
+            continue
         try:
             lines = file_path.read_text(encoding="utf-8").splitlines()
         except (UnicodeDecodeError, OSError):
             continue
         kind = classify_file(app_dir, file_path)
+        category = classify_category(app_dir, file_path)
         rel = file_path.relative_to(app_dir).as_posix()
         for line_no, line in enumerate(lines, start=1):
             matched = [kw for kw in cleaned if kw.lower() in line.lower()]
@@ -270,6 +325,7 @@ def search_downloaded(
             hits.append(
                 {
                     "kind": kind,
+                    "category": category,
                     "file": rel,
                     "line": line_no,
                     "text": line.strip(),
@@ -280,7 +336,7 @@ def search_downloaded(
 
 
 def summarize_hits(hits: List[Dict[str, Any]]) -> List[Tuple[str, int, int]]:
-    """種別ごとのファイル数とヒット行数。"""
+    """ファイル形式ごとのファイル数とヒット行数。"""
     files_by_kind: Dict[str, set] = {kind: set() for kind in KIND_ORDER}
     lines_by_kind: Dict[str, int] = {kind: 0 for kind in KIND_ORDER}
     for hit in hits:
@@ -292,3 +348,184 @@ def summarize_hits(hits: List[Dict[str, Any]]) -> List[Tuple[str, int, int]]:
         if lines_by_kind.get(kind):
             summary.append((kind, len(files_by_kind[kind]), lines_by_kind[kind]))
     return summary
+
+
+def summarize_categories(hits: List[Dict[str, Any]]) -> List[Tuple[str, int, int]]:
+    """webhook / javascript など種別ごとのファイル数とヒット行数。"""
+    files_by_cat: Dict[str, set] = {}
+    lines_by_cat: Dict[str, int] = {}
+    for hit in hits:
+        category = hit.get("category") or hit.get("kind") or "other"
+        files_by_cat.setdefault(category, set()).add((hit.get("app_dir") or "", hit.get("file") or ""))
+        lines_by_cat[category] = lines_by_cat.get(category, 0) + 1
+    return [
+        (category, len(files_by_cat[category]), lines_by_cat[category])
+        for category in sorted(files_by_cat)
+    ]
+
+
+def hits_for_keyword(hits: List[Dict[str, Any]], keyword: str) -> List[Dict[str, Any]]:
+    return [hit for hit in hits if keyword in (hit.get("keywords") or [])]
+
+
+def summarize_keyword_hits(keyword: str, hits: List[Dict[str, Any]]) -> Dict[str, Any]:
+    subset = hits_for_keyword(hits, keyword) if keyword != "（全体）" else hits
+    apps = sorted({str(hit.get("app_id") or "") for hit in subset if hit.get("app_id")})
+    files = {(hit.get("app_dir") or "", hit.get("file") or "") for hit in subset}
+    kinds = {hit.get("kind") or "" for hit in subset if hit.get("kind")}
+    categories = {hit.get("category") or "" for hit in subset if hit.get("category")}
+    kind_text = "、".join(
+        f"{kind}: {file_count}ファイル/{line_count}行"
+        for kind, file_count, line_count in summarize_hits(subset)
+    )
+    category_text = "、".join(
+        f"{category}: {file_count}ファイル/{line_count}行"
+        for category, file_count, line_count in summarize_categories(subset)
+    )
+    return {
+        "keyword": keyword,
+        "hit_count": len(subset),
+        "app_count": len(apps),
+        "kind_count": len(kinds),
+        "category_count": len(categories),
+        "file_count": len(files),
+        "kind_detail": kind_text,
+        "category_detail": category_text,
+        "app_ids": ", ".join(apps),
+    }
+
+
+def _safe_sheet_name(name: str, used: Set[str]) -> str:
+    cleaned = re.sub(r'[:\\/?*\[\]]', "_", (name or "").strip()) or "検索語"
+    cleaned = cleaned[:31]
+    candidate = cleaned
+    index = 2
+    while candidate in used:
+        suffix = f"_{index}"
+        candidate = cleaned[: 31 - len(suffix)] + suffix
+        index += 1
+    used.add(candidate)
+    return candidate
+
+
+def _app_label(hit: Dict[str, Any]) -> str:
+    app_dir = str(hit.get("app_dir") or "")
+    app_id = str(hit.get("app_id") or "")
+    prefix = f"{app_id}_"
+    if app_id and app_dir.startswith(prefix):
+        return app_dir[len(prefix):]
+    return app_dir
+
+
+def export_search_hits_to_excel(
+    keywords: Iterable[str],
+    hits: List[Dict[str, Any]],
+    output_path: Path,
+) -> Path:
+    """検索語ごとのサマリとヒット一覧を Excel に出力する。"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    words = [kw for kw in (k.strip() for k in keywords) if kw]
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    header_fill = PatternFill(start_color="E6F3FF", end_color="E6F3FF", fill_type="solid")
+    header_font = Font(bold=True)
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    data_align = Alignment(vertical="center", wrap_text=True)
+    thin = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
+    )
+
+    def write_table(ws, headers: List[str], rows: List[List[Any]], widths: List[int]) -> None:
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_align
+            cell.border = thin
+        for row_idx, row in enumerate(rows, 2):
+            for col, value in enumerate(row, 1):
+                cell = ws.cell(row=row_idx, column=col, value=value)
+                cell.alignment = data_align
+                cell.border = thin
+        for col, width in enumerate(widths, 1):
+            ws.column_dimensions[get_column_letter(col)].width = width
+        if rows:
+            ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{len(rows) + 1}"
+        ws.freeze_panes = "A2"
+        ws.row_dimensions[1].height = 22
+
+    wb = Workbook()
+    summary_ws = wb.active
+    summary_ws.title = "サマリ"
+    summary_headers = [
+        "検索語",
+        "ヒット行数",
+        "アプリ数",
+        "種別数",
+        "種別内訳",
+        "ファイル種類数",
+        "ファイル数",
+        "ファイル種類内訳",
+        "対象アプリ",
+    ]
+    summary_rows: List[List[Any]] = []
+    for word in words:
+        row = summarize_keyword_hits(word, hits)
+        summary_rows.append(
+            [
+                row["keyword"],
+                row["hit_count"],
+                row["app_count"],
+                row["category_count"],
+                row["category_detail"],
+                row["kind_count"],
+                row["file_count"],
+                row["kind_detail"],
+                row["app_ids"],
+            ]
+        )
+    total = summarize_keyword_hits("（全体）", hits)
+    summary_rows.append(
+        [
+            total["keyword"],
+            total["hit_count"],
+            total["app_count"],
+            total["category_count"],
+            total["category_detail"],
+            total["kind_count"],
+            total["file_count"],
+            total["kind_detail"],
+            total["app_ids"],
+        ]
+    )
+    write_table(summary_ws, summary_headers, summary_rows, [24, 12, 10, 10, 40, 14, 12, 40, 24])
+
+    used_names = {summary_ws.title}
+    hit_headers = ["アプリID", "アプリ名", "種別", "種類", "ファイル", "行", "内容", "検索語"]
+    for word in words:
+        ws = wb.create_sheet(_safe_sheet_name(word, used_names))
+        subset = hits_for_keyword(hits, word)
+        hit_rows = [
+            [
+                hit.get("app_id") or "",
+                _app_label(hit),
+                hit.get("category") or "",
+                hit.get("kind") or "",
+                hit.get("file") or "",
+                hit.get("line") or "",
+                hit.get("text") or "",
+                word,
+            ]
+            for hit in subset
+        ]
+        write_table(ws, hit_headers, hit_rows, [12, 24, 16, 14, 40, 8, 80, 20])
+
+    wb.save(output_path)
+    return output_path
