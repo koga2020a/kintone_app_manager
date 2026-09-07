@@ -23,7 +23,7 @@ class ArgumentParser:
   @staticmethod
   def parse_arguments():
     parser = argparse.ArgumentParser(
-      description='Kintoneの全ユーザーと各ユーザーの所属グループをExcelに出力します。\n\n引数を省略した場合、config_UserAccount.yaml を参照して認証情報を取得し、デフォルトの出力ファイル名を使用します。',
+      description='Kintoneの全ユーザーと各ユーザーの所属グループをExcelに出力します。\n\n引数を省略した場合、リポジトリ直下の .kintone.env を参照して認証情報を取得し、デフォルトの出力ファイル名を使用します。',
       formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument('--subdomain', help='Kintoneのサブドメイン (例: sample)')
@@ -31,6 +31,7 @@ class ArgumentParser:
     parser.add_argument('--password', help='管理者ユーザーのパスワード (指定しない場合、プロンプトで入力)')
     parser.add_argument('--output', default='kintone_users_groups.xlsx', help='出力するExcelファイルの名前 (デフォルト: kintone_users_groups.xlsx)')
     parser.add_argument('--silent', action='store_true', help='サイレントモードを有効にします。詳細なログを表示しません。')
+    parser.add_argument('--yaml-dir', default='.', help='group_user_list.yaml などのマスタYAMLの出力先ディレクトリ (デフォルト: カレントディレクトリ)')
     
     return parser.parse_args()
 
@@ -202,9 +203,14 @@ class DataProcessor:
     self.logger.info("データフレームの作成が完了しました。")
     return {'アクティブ': df_active, '停止中': df_stopped}
 
-  def export_group_user_list(self, filtered_groups: List[Dict[str, Any]]):
-    """グループとユーザーの関連をYAMLファイルとして出力"""
-    self.logger.info("group_user_list.yaml、group_user_list_NoUse.yaml、user_list.yaml、group_user_raw_list.yaml を生成中...")
+  def export_group_user_list(self, filtered_groups: List[Dict[str, Any]], yaml_dir: str = '.'):
+    """グループとユーザーの関連をYAMLファイルとして出力
+
+    Args:
+      filtered_groups: 対象グループの一覧
+      yaml_dir: YAMLファイルの出力先ディレクトリ（デフォルト: カレントディレクトリ）
+    """
+    self.logger.info(f"group_user_list.yaml、group_user_list_NoUse.yaml、user_list.yaml、group_user_raw_list.yaml を {os.path.abspath(yaml_dir)} に生成中...")
     
     active_group_data = {}
     inactive_group_data = {}
@@ -305,23 +311,25 @@ class DataProcessor:
     
     # YAMLファイルに出力
     try:
+      os.makedirs(yaml_dir, exist_ok=True)
+
       # アクティブユーザー用のファイル
-      with open('group_user_list.yaml', 'w', encoding='utf-8') as f:
+      with open(os.path.join(yaml_dir, 'group_user_list.yaml'), 'w', encoding='utf-8') as f:
         yaml.dump(active_group_data, f, allow_unicode=True, sort_keys=False)
       
       # 停止中ユーザー用のファイル
-      with open('group_user_list_NoUse.yaml', 'w', encoding='utf-8') as f:
+      with open(os.path.join(yaml_dir, 'group_user_list_NoUse.yaml'), 'w', encoding='utf-8') as f:
         yaml.dump(inactive_group_data, f, allow_unicode=True, sort_keys=False)
       
       # ユーザーリストファイルを出力
-      with open('user_list.yaml', 'w', encoding='utf-8') as f:
+      with open(os.path.join(yaml_dir, 'user_list.yaml'), 'w', encoding='utf-8') as f:
         yaml.dump(user_list_data, f, allow_unicode=True, sort_keys=False)
       
       # rawユーザー用のファイル
-      with open('group_user_raw_list.yaml', 'w', encoding='utf-8') as f:
+      with open(os.path.join(yaml_dir, 'group_user_raw_list.yaml'), 'w', encoding='utf-8') as f:
         yaml.dump(raw_group_data, f, allow_unicode=True, sort_keys=False)
       
-      self.logger.info("group_user_list.yaml、group_user_list_NoUse.yaml、user_list.yaml、group_user_raw_list.yaml の生成が完了しました。")
+      self.logger.info(f"group_user_list.yaml、group_user_list_NoUse.yaml、user_list.yaml、group_user_raw_list.yaml を {os.path.abspath(yaml_dir)} に生成しました。")
     except Exception as e:
       self.logger.error(f"YAMLファイルの生成中にエラーが発生しました: {e}")
 
@@ -892,9 +900,9 @@ def main():
   username = args.username
   password = args.password
 
-  # 引数が指定されていない場合、デフォルトのconfig_UserAccount.yamlを使用
+  # 引数が指定されていない場合、リポジトリ直下の .kintone.env を使用
   if not (subdomain and username and password):
-    default_config = 'config_UserAccount.yaml'
+    default_config = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.kintone.env')
     try:
       config = load_config(default_config)
       if not subdomain:
@@ -928,7 +936,7 @@ def main():
   dataframes = processor.generate_dataframes(group_names)
   
   # group_user_list.yamlの生成を追加
-  processor.export_group_user_list(filtered_groups)
+  processor.export_group_user_list(filtered_groups, args.yaml_dir)
 
   # Excelへのエクスポートとフォーマット
   exporter = ExcelExporter(dataframes, group_names, args.output, logger)

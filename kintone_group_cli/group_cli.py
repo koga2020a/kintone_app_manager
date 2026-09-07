@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import base64
 from getpass import getpass
@@ -332,12 +333,15 @@ def setup_logging(silent: bool = False, debug: bool = False) -> logging.Logger:
         logger.addHandler(handler)
     return logger
 
-def load_config(config_path: str = 'config_UserAccount.yaml') -> dict:
+DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.kintone.env')
+
+
+def load_config(config_path: str = DEFAULT_CONFIG_PATH) -> dict:
     try:
         with open(config_path, 'r', encoding='utf-8') as file:
             return yaml.safe_load(file)
     except FileNotFoundError:
-        # config_UserAccount.yamlが見つからない場合は.kintone.envを試す
+        # 指定ファイルが見つからない場合はカレントディレクトリの .kintone.env を試す
         try:
             with open('.kintone.env', 'r', encoding='utf-8') as file:
                 return yaml.safe_load(file)
@@ -356,7 +360,7 @@ def main():
     parser.add_argument('command', nargs='?', help='コマンド (set/list) または検索キーワード')
     parser.add_argument('user', nargs='?', help='ユーザー名 (setコマンド用)')
     parser.add_argument('group', nargs='?', help='グループ名 (setコマンド用)')
-    parser.add_argument('--config', default='config_UserAccount.yaml', help='設定ファイルのパス')
+    parser.add_argument('--config', default=DEFAULT_CONFIG_PATH, help='設定ファイルのパス（既定: リポジトリ直下の .kintone.env）')
     parser.add_argument('--silent', action='store_true', help='詳細なログを表示しない')
     parser.add_argument('--debug', action='store_true', help='デバッグログを表示する')
     parser.add_argument('--search', action='store_true', help='ユーザー検索モードを有効にする')
