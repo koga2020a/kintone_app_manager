@@ -9,6 +9,13 @@ from openpyxl.utils.cell import get_column_letter
 import csv
 import logging
 from collections import Counter
+from pathlib import Path
+
+# スクリプト位置を基準にした固定パス（カレントディレクトリに依存しない）
+SCRIPT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = SCRIPT_DIR.parent
+OUTPUT_DIR = ROOT_DIR / "output"
+DEFAULT_GROUP_MASTER = OUTPUT_DIR / "group_user_list.yaml"
 
 # 縦書きの定数を定義
 VERTICAL_TEXT_JAPANESE = 255  # 日本語の縦書き
@@ -167,30 +174,6 @@ def load_group_map(header_name, base_dir, group_master_path, field_entities):
   # FIELD_ENTITYをグループマッピングに追加
   group_map.update(field_entities)
   return group_map
-
-def load_userValid_list(user_list_path):
-  """
-  user_list.yaml からユーザーコードと有効性を読み込む
-
-  Args:
-    user_list_path (str): user_list.yaml のファイルパス
-
-  Returns:
-    dict: ユーザーコードをキー、validを値とする辞書
-  """
-  try:
-    with open(user_list_path, 'r', encoding='utf-8') as f:
-      user_data = yaml.safe_load(f)
-      user_map = {}
-      for key, user_info in user_data.items():
-        code = user_info.get('code')
-        valid = user_info.get('valid', False)
-        if code:
-          user_map[code] = valid
-      return user_map
-  except Exception as e:
-    logging.warning(f"警告: user_list.yaml の読み込みに失敗しました: {str(e)}")
-    return {}
 
 def load_userName_list(group_master_path):
   """
@@ -1144,9 +1127,9 @@ def main():
   """
   parser = argparse.ArgumentParser(description='YAMLファイルをExcelファイルに変換するスクリプト')
   parser.add_argument('header_name', type=str, help='ヘッダー名 (例: 14)')
-  parser.add_argument('--group-master', '-g', type=str, 
-                     default=os.path.join('..', 'kintone_get_user_group', 'group_user_list.yaml'),
-                     help='グループマスタファイルのパス')
+  parser.add_argument('--group-master', '-g', type=str,
+                     default=str(DEFAULT_GROUP_MASTER),
+                     help=f'グループマスタファイルのパス (デフォルト: {DEFAULT_GROUP_MASTER})')
   parser.add_argument('--log-level', type=str, choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                      default='INFO', help='ログレベル (デフォルト: INFO)')
   parser.add_argument('--silent', action='store_true', help='ログ出力を抑制する')
@@ -1162,7 +1145,7 @@ def main():
   header_name = args.header_name
   group_master_path = args.group_master
 
-  output_dir = os.path.join(os.getcwd(), 'output')
+  output_dir = str(OUTPUT_DIR)
   logging.debug(f"出力ディレクトリ: {output_dir}")
 
   # "{header_name}_" で始まるディレクトリを検索

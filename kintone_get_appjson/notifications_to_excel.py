@@ -88,68 +88,56 @@ def load_group_yaml_data(yaml_path):
         logging.warning(f"グループユーザーリストの読み込みに失敗しました: {e}")
         return {}
 
-# もう一つのデータソースからグループ情報を読み込む関数を追加
-def load_group_list_yaml(yaml_dir):
+# マスタYAML（group_user_list.yaml / user_list.yaml など）の検索場所
+# 正規の置き場は output/ 直下。以降は単体実行などの互換用フォールバック。
+MASTER_YAML_SEARCH_PATHS = [
+    OUTPUT_DIR,  # 出力ディレクトリ（正規の置き場）
+    SCRIPT_DIR.parent,  # プロジェクトルート
+    SCRIPT_DIR,  # notifications_to_excel.pyと同じディレクトリ
+    Path.cwd(),  # カレントディレクトリ
+]
+
+
+def find_master_yaml(*filenames):
+    """マスタYAMLを決まった検索順で探す
+
+    Args:
+        *filenames: 探すファイル名（優先順）
+
+    Returns:
+        Path or None: 最初に見つかったファイルのパス
     """
-    グループコードとグループ名のマッピングを読み込む
-    """
-    try:
-        group_list_path = yaml_dir / "group_list.yaml"
-        if not group_list_path.exists():
-            logging.warning(f"グループリストファイルが見つかりません: {group_list_path}")
-            return {}
-            
-        with open(group_list_path, 'r', encoding='utf-8') as f:
-            group_mapping = yaml.safe_load(f)
-            return group_mapping
-    except Exception as e:
-        logging.warning(f"グループリストの読み込みに失敗しました: {e}")
-        return {}
+    for filename in filenames:
+        for path in MASTER_YAML_SEARCH_PATHS:
+            yaml_path = path / filename
+            if yaml_path.exists():
+                logging.info(f"{filename} が見つかりました: {yaml_path}")
+                return yaml_path
+
+    logging.warning(f"{' と '.join(filenames)} のどちらも見つかりませんでした")
+    return None
+
 
 # ユーザー情報を読み込む関数を追加
-def load_user_list_yaml(yaml_dir):
+def load_user_list_yaml():
     """
-    ユーザー情報を読み込む
+    ユーザー情報を読み込む（user_list.yaml をマスタYAMLの検索順で探す）
     """
+    user_list_path = find_master_yaml("user_list.yaml")
+    if user_list_path is None:
+        return {}
+
     try:
-        user_list_path = yaml_dir / "user_list.yaml"
-        if not user_list_path.exists():
-            logging.warning(f"ユーザーリストファイルが見つかりません: {user_list_path}")
-            return {}
-            
         with open(user_list_path, 'r', encoding='utf-8') as f:
             user_data = yaml.safe_load(f)
-            return user_data
+            return user_data or {}
     except Exception as e:
         logging.warning(f"ユーザーリストの読み込みに失敗しました: {e}")
         return {}
 
 def find_group_user_list_yaml():
     """group_user_list.yamlファイルを探す"""
-    # 検索場所のリスト
-    search_paths = [
-        Path(__file__).resolve().parent.parent,  # プロジェクトルート
-        Path(__file__).resolve().parent,  # notifications_to_excel.pyと同じディレクトリ
-        OUTPUT_DIR,  # 出力ディレクトリ
-        Path.cwd()  # カレントディレクトリ
-    ]
-    
-    # まず group_user_raw_list.yaml を探す
-    for path in search_paths:
-        yaml_path = path / "group_user_raw_list.yaml"
-        if yaml_path.exists():
-            logging.info(f"group_user_raw_list.yaml が見つかりました: {yaml_path}")
-            return yaml_path
-    
-    # 見つからなければ group_user_list.yaml を探す
-    for path in search_paths:
-        yaml_path = path / "group_user_list.yaml"
-        if yaml_path.exists():
-            logging.info(f"group_user_list.yaml が見つかりました: {yaml_path}")
-            return yaml_path
-    
-    logging.warning("group_user_raw_list.yaml と group_user_list.yaml のどちらも見つかりませんでした")
-    return None
+    return find_master_yaml("group_user_raw_list.yaml", "group_user_list.yaml")
 
 def load_field_values_from_tsv(app_dir, field_code):
     """
@@ -400,12 +388,13 @@ def add_field_values_reference(ws, row_idx, field_codes, app_dir, header_font, h
                 if group_yaml_data:
                     for group_data in group_yaml_data.values():
                         for user in group_data.get('users', []):
-                            user_code = user.get('code', '')
+                            # group_user_list.yaml のユーザーはキーが username（code は無い）
+                            user_code = user.get('code') or user.get('username', '')
                             if user_code:
                                 all_users[user_code] = user
                 
                 # user_list.yamlからもユーザー情報を取得
-                user_yaml_data = load_user_list_yaml(Path(SCRIPT_DIR).parent)
+                user_yaml_data = load_user_list_yaml()
                 if user_yaml_data:
                     for user_code, user_info in user_yaml_data.items():
                         if user_code not in all_users:
@@ -743,7 +732,7 @@ def create_general_notifications_sheet(wb, data, header_font, header_fill, heade
     
     # ユーザー情報を追加
     if user_codes:
-        user_yaml_data = load_user_list_yaml(Path(SCRIPT_DIR).parent)
+        user_yaml_data = load_user_list_yaml()
         row_idx = add_user_information_table(ws, row_idx, user_codes, header_font, header_fill, header_alignment, thin_border, user_yaml_data)
     
     # フィールド値の参考一覧を追加

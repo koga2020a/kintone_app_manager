@@ -12,6 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 import yaml
 
 from kintone_dev_api import fetch_dev_app_json
+from console import BOLD, CYAN, YELLOW, c
 
 SEARCH_SUFFIXES = {
     ".js",
@@ -481,6 +482,7 @@ def export_search_hits_to_excel(
         PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid"),
     ]
     header_font = Font(bold=True)
+    javascript_font = Font(bold=True)
     header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
     data_align = Alignment(vertical="center", wrap_text=True)
     thin = Border(
@@ -527,6 +529,9 @@ def export_search_hits_to_excel(
                 cell.border = thin
                 if fill is not None:
                     cell.fill = fill
+                header = headers[col - 1] if col <= len(headers) else ""
+                if header in {"種別", "種類"} and str(value).lower() == "javascript":
+                    cell.font = javascript_font
         for col, width in enumerate(widths, 1):
             current = ws.column_dimensions[get_column_letter(col)].width
             if current is None or current < width:
@@ -670,3 +675,95 @@ def export_search_hits_to_excel(
 
     wb.save(output_path)
     return output_path
+
+
+# ---------------------------------------------------------------------------
+# 表示用の整形（menu.py / kintone_runner.py で共用）
+# ---------------------------------------------------------------------------
+
+def search_all_apps(targets: List[Tuple[str, Path]], keywords: List[str]) -> List[Dict[str, Any]]:
+    """複数アプリを検索し、各 hit に app_id / app_dir を付けて返す。"""
+    hits: List[Dict[str, Any]] = []
+    for app_id, app_dir in targets:
+        found = search_downloaded(app_dir, keywords)
+        for hit in found:
+            hit["app_id"] = app_id
+            hit["app_dir"] = app_dir.name
+        hits.extend(found)
+    return hits
+
+
+def format_search_hits(
+    keywords: List[str],
+    hits: List[Dict[str, Any]],
+    multi_app: bool = False,
+    detail: bool = False,
+) -> List[str]:
+    """検索結果を端末表示用の行リストにする（色付き）。"""
+    lines: List[str] = []
+    lines.append(c(f"  検索語: {', '.join(keywords)}", BOLD, CYAN))
+    if not hits:
+        lines.append("  該当なし")
+        return lines
+    lines.append(c(f"  該当 {len(hits)} 行", BOLD, CYAN))
+    if detail:
+        lines.append("  該当したもの:")
+        for kind, file_count, line_count in summarize_hits(hits):
+            lines.append(f"    ・{kind}: {file_count} ファイル / {line_count} 行")
+        lines.append("")
+    file_keywords: Dict[Tuple[str, str], List[str]] = {}
+    for hit in hits:
+        key = (hit.get("app_dir") or "", hit["file"])
+        seen = file_keywords.setdefault(key, [])
+        for word in hit["keywords"]:
+            if word not in seen:
+                seen.append(word)
+    current_key = None
+    for hit in hits:
+        key = (hit.get("app_dir") or "", hit["file"])
+        if key != current_key:
+            current_key = key
+            file_label = hit["file"]
+            if multi_app and hit.get("app_dir"):
+                file_label = f"{hit['app_dir']}/{hit['file']}"
+            hit_words = ", ".join(file_keywords.get(key, hit["keywords"]))
+            label = hit.get("category") or hit["kind"]
+            lines.append(c(f"  [{label}] {file_label}  ヒット: {hit_words}", YELLOW))
+        preview = hit["text"]
+        if len(preview) > 160:
+            preview = preview[:157] + "..."
+        lines.append(f"    L{hit['line']:>5}  {preview}")
+    return lines
+
+
+def format_webhook_rows(rows: List[Dict[str, Any]]) -> List[str]:
+    """Webhook 一覧を端末表示用の行リストにする。"""
+    lines: List[str] = []
+    if not rows:
+        lines.append("  Webhook は 0 件です。")
+        return lines
+    lines.append(c(f"  {len(rows)} 件", BOLD, CYAN))
+    lines.append("")
+    for i, row in enumerate(rows, start=1):
+        enabled = row.get("enabled")
+        if enabled is True:
+            status = "有効"
+        elif enabled is False:
+            status = "無効"
+        else:
+            status = str(enabled) if enabled != "" else "-"
+        lines.append(f"  {i}. {row.get('name') or '(名称なし)'}  [{status}]")
+        if row.get("id"):
+            lines.append(f"     ID    : {row['id']}")
+        lines.append(f"     URL   : {row.get('url') or '-'}")
+        lines.append(f"     イベント: {row.get('events') or '-'}")
+        if row.get("headers"):
+            lines.append(f"     ヘッダ: {row['headers']}")
+        if row.get("creator"):
+            lines.append(f"     作成者 : {row['creator']}")
+        if row.get("modifier"):
+            lines.append(f"     更新者 : {row['modifier']}")
+        if row.get("modified_at"):
+            lines.append(f"     更新日時: {row['modified_at']}")
+        lines.append("")
+    return lines

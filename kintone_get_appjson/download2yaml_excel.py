@@ -809,9 +809,12 @@ class PropertyFieldMapper:
 
 # ─── KintoneApp クラス ─────────────────────────────────────────────
 class KintoneApp:
-    def __init__(self, appid, api_token=None, subdomain=None, username=None, password=None, config_path='config_UserAccount.yaml'):
+    # 単体実行時に認証情報を読む既定の設定ファイル（リポジトリ直下の .kintone.env）
+    DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / '.kintone.env'
+
+    def __init__(self, appid, api_token=None, subdomain=None, username=None, password=None, config_path=None):
         self.appid = appid
-        config = self.load_config(config_path)
+        config = self.load_config(config_path or self.DEFAULT_CONFIG_PATH)
         self.subdomain = subdomain or config.get('subdomain')
         self.username = username or config.get('username')
         self.password = password or config.get('password')
@@ -1605,5 +1608,5 @@ if __name__ == "__main__":
         app.run()
     else:
         print("Usage: python script.py <appid> [<api_token> <subdomain> <username> <password>]")
-        print("Note: 認証情報は config_UserAccount.yaml からも読み込めます")
+        print("Note: 認証情報はリポジトリ直下の .kintone.env からも読み込めます")
         exit_with_error("引数が不正です")
